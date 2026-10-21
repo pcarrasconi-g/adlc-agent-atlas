@@ -1,0 +1,108 @@
+# Agent kit. Keep it independent from product repositories.
+# These plain-text definitions can be reused by any AI host.
+# Any orchestrator may load this file and create its own subagents.
+# Odradek observes only the explicit local event stream.
+
+runtime:
+  defaultModel: host-selected
+  # Product repository that agents modify (any local developer clone).
+  # Override with --workspace or WORKSPACE_CWD.
+  workspaceCwd: ${WORKSPACE_CWD:-.}
+  maxDialogueRounds: 12
+
+dialogue:
+  # Suggested first pass; the supervisor may invoke other roles by status.
+  openingOrder:
+    - product-analyst
+    - architect
+    - devops
+    - engineer
+    - reviewer
+  # Roles allowed to close an objective with status "done".
+  closers:
+    - reviewer
+    - supervisor
+
+agents:
+  product-analyst:
+    displayName: Product Analyst
+    enabled: true
+    model: host-selected
+    promptFile: prompts/product-analyst.md
+    runtime: local
+    responsibilities:
+      - Turn work items into a clear goal and acceptance criteria
+      - Detect ambiguity and ask before implementation
+    mayRequestFrom:
+      - architect
+      - devops
+
+  architect:
+    displayName: Solution Architect
+    enabled: true
+    model: host-selected
+    promptFile: prompts/architect.md
+    runtime: local
+    responsibilities:
+      - Technical design, service boundaries, and API contracts
+      - Align with the product platform without deploying agents there
+    mayRequestFrom:
+      - product-analyst
+      - devops
+
+  devops:
+    displayName: DevOps / Platform
+    enabled: true
+    model: host-selected
+    promptFile: prompts/devops.md
+    runtime: local
+    responsibilities:
+      - CI/CD, container images, and deployment manifests
+      - Secrets, observability, and deployment policies
+    mayRequestFrom:
+      - architect
+      - engineer
+
+  engineer:
+    displayName: Software Engineer
+    enabled: true
+    model: host-selected
+    promptFile: prompts/engineer.md
+    runtime: local
+    responsibilities:
+      - Implementation and tests in the workspace
+      - Code aligned with architectural decisions
+    mayRequestFrom:
+      - architect
+      - product-analyst
+
+  reviewer:
+    displayName: Quality & Security Reviewer
+    enabled: true
+    model: host-selected
+    promptFile: prompts/reviewer.md
+    runtime: local
+    responsibilities:
+      - Change review, security, tests, and merge readiness
+      - May return work to engineer or devops
+    mayRequestFrom:
+      - engineer
+      - devops
+      - architect
+
+  supervisor:
+    displayName: Dialogue Supervisor
+    enabled: true
+    model: host-selected
+    promptFile: prompts/supervisor.md
+    runtime: local
+    responsibilities:
+      - Choose the next agent from the transcript
+      - Detect blockers and loops; close or escalate when needed
+    # Does not use code tools; reasons only over the message bus.
+
+integrations:
+  example:
+    enabled: false
+    mcpServerName: replace-with-your-server
+    notes: Add only local or organization-approved integrations. Never commit credentials.

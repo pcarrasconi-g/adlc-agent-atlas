@@ -1,0 +1,9 @@
+.env
+agent-kit/node_modules/
+agent-kit/output/sessions/*.json
+!agent-kit/output/sessions/.gitkeep
+observatory/backend/node_modules/
+observatory/backend/dist/
+observatory/frontend/node_modules/
+observatory/frontend/dist/
+*.tsbuildinfo

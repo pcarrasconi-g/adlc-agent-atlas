@@ -1,0 +1,43 @@
+import Fastify from "fastify"; import cors from "@fastify/cors"; import chokidar from "chokidar"; import path from "node:path"; import { realpath } from "node:fs/promises"; import { agentTeamEvents } from "./detectors/agent-team.js"; import { Store } from "./store.js"; import { createPool } from "./db.js"; import { parseAtSequence, projectSession } from "./lib/projection.js"; import { redact, redactDeep } from "./lib/redact.js";
+const db=createPool(); const app=Fastify({logger:true}); await app.register(cors,{origin:process.env.CORS_ORIGIN||"http://127.0.0.1:8090"});
+// Default SSE messages deliberately omit an `event:` field: EventSource.onmessage
+// consumers receive them without registering a custom event listener.
+const clients=new Set<any>(); const maxSseClients=Number(process.env.SSE_MAX_CLIENTS||20);
+const publish=(data:unknown)=>{const line=`data: ${JSON.stringify(data)}\n\n`;for(const r of clients)if(!r.raw.writableEnded)r.raw.write(line)}; const store=new Store(db,publish);
+const allowedRoot=path.resolve(process.env.WATCH_ROOT||"/watched");
+async function safeTranscript(p:string){
+ const root=await realpath(allowedRoot);const full=await realpath(p);const relative=path.relative(root,full);
+ const approved=(/^sessions[\\/][A-Za-z0-9_-]+\.json$/).test(relative);
+ if(!approved||relative.startsWith("..")||path.isAbsolute(relative))throw new Error("Path outside configured read-only watch root");
+ return full;
+}
+async function sourceForFile(file:string){
+ const full=await safeTranscript(file);const relative=path.relative(await realpath(allowedRoot),full);
+ const kind="odradek-output";
+ const name="Odradek local output: "+relative;
+ const r=await db.query("INSERT INTO sources(name,kind,path) VALUES($1,$2,$3) ON CONFLICT(path) DO UPDATE SET enabled=true,name=EXCLUDED.name,kind=EXCLUDED.kind RETURNING id",[name,kind,full]);
+ return r.rows[0].id;
+}
+async function importFile(file:string){const full=await safeTranscript(file);return store.ingest(await sourceForFile(full),await agentTeamEvents(full));}
+// chokidar v4 intentionally does not expand glob patterns. Watch the explicit
+// directory and filter file extensions below so newly-created explicit sessions
+// are discovered as well as pre-existing ones.
+const watchedFiles=[path.join(allowedRoot,"sessions")];
+const watcher=chokidar.watch(watchedFiles,{ignoreInitial:false,awaitWriteFinish:{stabilityThreshold:500}});
+const importJson=(file:string)=>{if(path.extname(file)===".json") importFile(file).catch(()=>{});};
+watcher.on("add",importJson).on("change",importJson);
+app.get("/health",async()=>{await db.query("SELECT 1");return {status:"ok"}});
+app.get("/api/projects",async()=> (await db.query("SELECT p.id,p.name,p.source_kind AS \"sourceKind\",p.created_at AS \"createdAt\",count(s.id)::int AS \"sessionCount\" FROM projects p LEFT JOIN sessions s ON s.project_id=p.id GROUP BY p.id ORDER BY p.created_at DESC")).rows);
+const sessionProjection=`s.id,s.project_id AS "projectId",s.source_id AS "sourceId",s.external_key AS "externalKey",s.title,s.status,s.started_at AS "startedAt",s.ended_at AS "endedAt",s.created_at AS "createdAt",s.updated_at AS "updatedAt",p.name AS "projectName",count(DISTINCT a.id)::int AS "agentCount",count(DISTINCT e.id)::int AS "eventCount"`;
+app.get("/api/sessions",async(req)=>{const q=req.query as any;return (await db.query(`SELECT ${sessionProjection} FROM sessions s JOIN projects p ON p.id=s.project_id LEFT JOIN agents a ON a.session_id=s.id LEFT JOIN events e ON e.session_id=s.id WHERE ($1::uuid IS NULL OR s.project_id=$1) GROUP BY s.id,p.name ORDER BY s.updated_at DESC`,[q.projectId||null])).rows});
+app.get("/api/sessions/:id",async(req,rep)=>{const row=(await db.query(`SELECT ${sessionProjection} FROM sessions s JOIN projects p ON p.id=s.project_id LEFT JOIN agents a ON a.session_id=s.id LEFT JOIN events e ON e.session_id=s.id WHERE s.id=$1 GROUP BY s.id,p.name`,[(req.params as any).id])).rows[0]; return row || rep.code(404).send({error:"Session not found"})});
+app.get("/api/sessions/:id/events",async(req,rep)=> { const q=req.query as any; let at:number|undefined; try { at=parseAtSequence(q.atSequence); } catch(e) { return rep.code(400).send({error:String(e).replace("Error: ","")}); } const parsedLimit=Number(q.limit||100); if(!Number.isInteger(parsedLimit)||parsedLimit<1)return rep.code(400).send({error:"limit must be a positive integer"}); const limit=Math.min(parsedLimit,500); const after=q.afterSequence===undefined?undefined:Number(q.afterSequence); if(after!==undefined&&(!Number.isInteger(after)||after<0))return rep.code(400).send({error:"afterSequence must be a non-negative integer"}); const rows=(await db.query(`SELECT e.id,e.session_id AS "sessionId",e.agent_id AS "agentId",a.name AS "agentName",a.external_key AS "agentKey",e.external_key AS "externalKey",e.schema_version AS "schemaVersion",e.event_type AS type,e.status,e.sequence,e.occurred_at AS timestamp,e.summary,e.content,e.payload,e.created_at AS "createdAt" FROM events e LEFT JOIN agents a ON a.id=e.agent_id WHERE e.session_id=$1 AND ($2::int IS NULL OR e.sequence <= $2) AND ($3::int IS NULL OR e.sequence > $3) ORDER BY e.sequence LIMIT $4`,[(req.params as any).id,at??null,after??null,limit])).rows; return rows.map((row:any)=>({...row,summary:row.summary&&redact(row.summary),content:row.content&&redact(row.content),payload:redactDeep(row.payload)})); });
+async function projectionFor(id:string, atSequence?:number) { const session=(await db.query("SELECT id,status FROM sessions WHERE id=$1",[id])).rows[0]; if(!session)return null; const events=(await db.query(`SELECT e.id,e.sequence,e.event_type AS type,e.status,e.agent_id AS "agentId",a.external_key AS "agentKey",a.name AS "agentName",a.role AS "agentRole",e.occurred_at AS timestamp,e.summary FROM events e LEFT JOIN agents a ON a.id=e.agent_id WHERE e.session_id=$1 ORDER BY e.sequence`,[id])).rows; const edges=(await db.query(`SELECT ed.id,ed.from_agent_id AS source,ed.to_agent_id AS target,ed.relation,ed.event_id AS "eventId",e.sequence,ed.provenance,ed.confidence,ed.metadata,ed.sequence_start AS "sequenceStart",ed.sequence_end AS "sequenceEnd" FROM edges ed LEFT JOIN events e ON e.id=ed.event_id WHERE ed.session_id=$1`,[id])).rows; return projectSession({sessionStatus:session.status,events,edges,atSequence}); }
+app.get("/api/sessions/:id/projection",async(req,rep)=>{let at:number|undefined; try { at=parseAtSequence((req.query as any).atSequence); } catch(e) { return rep.code(400).send({error:String(e).replace("Error: ","")}); } const value=await projectionFor((req.params as any).id,at); return value || rep.code(404).send({error:"Session not found"});});
+app.get("/api/sessions/:id/graph",async(req,rep)=>{const value=await projectionFor((req.params as any).id); if(!value)return rep.code(404).send({error:"Session not found"}); return {nodes:value.nodes,links:value.links,displayStatus:value.displayStatus,recordedStatus:value.recordedStatus};});
+app.get("/api/sources",async()=> (await db.query("SELECT id,name,kind,path,enabled,last_error AS \"lastError\",last_seen_at AS \"lastSeenAt\",created_at AS \"createdAt\" FROM sources ORDER BY created_at DESC")).rows);
+app.post("/api/sources/:id/import",async(req,rep)=>{try{const s=(await db.query("SELECT * FROM sources WHERE id=$1",[(req.params as any).id])).rows[0];if(!s)return rep.code(404).send(); return {sessionId:await importFile(s.path)}}catch(e){return rep.code(400).send({error:String(e)})}});
+app.delete("/api/sources/:id",async(req)=>{await db.query("DELETE FROM sources WHERE id=$1",[(req.params as any).id]);return {deleted:true}});
+app.delete("/api/sessions/:id",async(req)=>{await db.query("DELETE FROM sessions WHERE id=$1",[(req.params as any).id]);return {deleted:true}});
+app.get("/api/stream",(req,rep)=>{if(clients.size>=maxSseClients)return rep.code(503).send({error:"SSE client limit reached"});rep.raw.writeHead(200,{"Content-Type":"text/event-stream","Cache-Control":"no-cache","Connection":"keep-alive","X-Accel-Buffering":"no"});rep.raw.write("data: {\"type\":\"ready\"}\n\n");clients.add(rep);const heartbeat=setInterval(()=>{if(rep.raw.writableEnded){clearInterval(heartbeat);clients.delete(rep)}else rep.raw.write(": heartbeat\n\n")},15_000);req.raw.on("close",()=>{clearInterval(heartbeat);clients.delete(rep)});});
+await app.listen({host:"0.0.0.0",port:Number(process.env.PORT||3000)});

@@ -1,0 +1,40 @@
+services:
+  web:
+    build: ./observatory/frontend
+    ports: ["127.0.0.1:${ODRADEK_PORT:-8090}:80"]
+    depends_on: { api: { condition: service_healthy } }
+    read_only: true
+    tmpfs: [/var/cache/nginx, /var/run, /tmp]
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETGID, SETUID]
+    security_opt: [no-new-privileges:true]
+  api:
+    build: ./observatory/backend
+    environment:
+      PGHOST: db
+      PGPORT: 5432
+      PGDATABASE: odradek
+      PGUSER: odradek
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      WATCH_ROOT: /watched
+      CORS_ORIGIN: http://127.0.0.1:${ODRADEK_PORT:-8090}
+    volumes:
+      - ./agent-kit/output:/watched:ro
+    depends_on: { db: { condition: service_healthy } }
+    expose: ["3000"]
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    healthcheck: { test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"], interval: 10s, timeout: 3s, retries: 10 }
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: odradek
+      POSTGRES_DB: odradek
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes: [odradek-data:/var/lib/postgresql/data]
+    expose: ["5432"]
+    security_opt: [no-new-privileges:true]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U odradek -d odradek"], interval: 5s, timeout: 3s, retries: 10 }
+volumes: { odradek-data: {} }

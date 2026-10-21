@@ -1,0 +1,10 @@
+# Copy to mcp.servers.yaml only when your organization approves an integration.
+# The AI host decides how to expose MCP servers to agents. This kit never calls
+# provider APIs and never includes provider SDKs or credentials.
+
+servers:
+  example-local-tool:
+    transport: stdio
+    command: node
+    args:
+      - "./path/to/approved-local-mcp-server.mjs"
