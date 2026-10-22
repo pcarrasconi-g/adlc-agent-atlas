@@ -42,45 +42,18 @@ export async function runMultiAgentDialogue(options: {
   const bus = new ConversationBus(options.goal, { jiraKey: options.jiraKey });
   const reporter = options.reporter;
 
+  let previousInstanceId: string | undefined;
   function emitTurn(entry: Omit<TranscriptEntry, "at"> & { at?: string }): void {
-    const parsed = entry.parsed;
+    // Relations only connect actual instances. Logical nextSpeaker/profile names
+    // remain routing hints and never become graph nodes.
     const relations: TranscriptRelation[] = [...(entry.relations ?? [])];
-    if (parsed && "nextSpeaker" in parsed && parsed.nextSpeaker && parsed.nextSpeaker !== entry.agentId) {
-      relations.push({
-        from: entry.agentId,
-        to: parsed.nextSpeaker,
-        kind: "delegation",
-        source: "explicit",
-        confidence: 1,
-      });
-    }
-    if (parsed && "questionsFor" in parsed) {
-      for (const question of parsed.questionsFor ?? []) {
-        if (question.to && question.to !== entry.agentId) {
-          relations.push({
-            from: entry.agentId,
-            to: question.to,
-            kind: "message",
-            source: "explicit",
-            confidence: 1,
-          });
-        }
-      }
-      if (parsed.suggestedNextSpeaker && parsed.suggestedNextSpeaker !== entry.agentId) {
-        relations.push({
-          from: entry.agentId,
-          to: parsed.suggestedNextSpeaker,
-          kind: "handoff",
-          source: "explicit",
-          confidence: 1,
-        });
-      }
-    }
+    if (previousInstanceId && previousInstanceId !== entry.agentId) relations.push({ from: previousInstanceId, to: entry.agentId, kind: "delegation", source: "explicit", confidence: 1 });
     const unique = new Map(relations.map((relation) => [
       `${relation.from}:${relation.to}:${relation.kind}`,
       relation,
     ]));
     bus.append({ ...entry, relations: [...unique.values()] });
+    previousInstanceId = entry.agentId;
     reporter?.onTurnEnd(bus.getTranscript().at(-1)!);
   }
 
@@ -104,7 +77,8 @@ export async function runMultiAgentDialogue(options: {
       const parsed = parseSupervisorTurn(sup.text);
       emitTurn({
         round,
-        agentId: "supervisor",
+        agentId: sup.instanceId,
+        profileId: "supervisor",
         rawText: sup.text,
         parsed,
         runId: sup.runId,
@@ -132,7 +106,8 @@ export async function runMultiAgentDialogue(options: {
     const parsed = parseAgentTurn(turn.text);
     emitTurn({
       round,
-      agentId,
+      agentId: turn.instanceId,
+      profileId: agentId,
       rawText: turn.text,
       parsed,
       runId: turn.runId,

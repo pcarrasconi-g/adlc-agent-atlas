@@ -38,6 +38,8 @@ export type TranscriptRelation = {
 
 export type TranscriptEntry = {
   round: number;
+  /** Logical prompt selector; never use this as an observability identity. */
+  profileId?: string;
   agentId: string;
   rawText: string;
   parsed?: AgentTurn | SupervisorTurn | undefined;

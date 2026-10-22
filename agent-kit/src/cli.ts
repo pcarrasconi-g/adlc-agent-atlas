@@ -12,8 +12,8 @@ function usage(): void {
   npm run run:goal -- --goal "objetivo" [--workspace /path/al/repo] [--jira PROJ-123] [--out sessions/nombre.json] [--no-visual]
 
   Adaptador: define ODRADEK_AGENT_COMMAND_JSON como un array JSON de comando y argumentos.
-  El adaptador recibe {protocol, agentId, prompt, workspaceCwd, allowedMcp} por stdin
-  y devuelve {text, runId, status} por stdout.
+  El adaptador recibe {protocol:'odradek.agent.v2', profileId, prompt, workspaceCwd, allowedMcp} por stdin
+  y devuelve {text, instance:{id,provider}, runId, status} por stdout. profileId no es identidad.
   Para uso con cualquier orquestador, se recomienda leer config/ y escribir una sesión
   explícita en output/sessions/<session-id>.json; este runner no instala SDKs ni hooks.`);
 }
