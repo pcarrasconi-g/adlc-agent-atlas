@@ -7,16 +7,11 @@ import type { McpServersFile } from "../config/load.js";
 export type TurnResult = {
   text: string;
   runId: string;
-  instanceId: string;
-  provider: string;
   status: "finished" | "error";
 };
 
 type HostTurnRequest = {
-  protocol: "odradek.agent.v2";
-  /** Logical prompt/profile selector, not an agent instance ID. */
-  profileId: string;
-  /** Deprecated v1 compatibility selector. */
+  protocol: "odradek.agent.v1";
   agentId: string;
   prompt: string;
   workspaceCwd: string;
@@ -26,7 +21,6 @@ type HostTurnRequest = {
 type HostTurnResponse = {
   text: string;
   runId?: string;
-  instance?: { id: string; provider: string };
   status?: "finished" | "error";
 };
 
@@ -65,7 +59,7 @@ async function invokeHost(request: HostTurnRequest): Promise<HostTurnResponse> {
         if (typeof response.text !== "string") throw new Error("falta text");
         resolve(response);
       } catch {
-        reject(new Error("El adaptador de IA debe devolver JSON {text, instance:{id,provider}, runId, status} por stdout"));
+        reject(new Error("El adaptador de IA debe devolver JSON {text, runId, status} por stdout"));
       }
     });
     child.stdin.end(JSON.stringify(request));
@@ -88,22 +82,15 @@ export async function runAgentTurn(params: {
   const allowedMcp = mcpForAgent(params.agentId, params.config.integrations);
   const prompt = [system, ...skills, params.userMessage].join("\n\n---\n\n");
   const result = await invokeHost({
-    protocol: "odradek.agent.v2",
-    profileId: params.agentId,
+    protocol: "odradek.agent.v1",
     agentId: params.agentId,
     prompt,
     workspaceCwd: params.config.runtime.workspaceCwd,
     allowedMcp,
   });
-  const instanceId = result.instance?.id?.trim();
-  const provider = result.instance?.provider?.trim();
-  if (!instanceId || !provider) throw new Error("El adaptador debe declarar instance.id e instance.provider reales.");
-  if (params.config.agents[instanceId]) throw new Error(`instance.id no puede ser un perfil lógico: ${instanceId}`);
   return {
     text: result.text,
     runId: result.runId || `${params.agentId}-${Date.now()}`,
-    instanceId,
-    provider,
     status: result.status === "error" ? "error" : "finished",
   };
 }
