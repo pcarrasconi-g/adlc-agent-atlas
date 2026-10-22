@@ -19,3 +19,16 @@ node agent-kit/scripts/odradek-event.mjs init --session my-task --goal "Short go
 
 The output is local-only under `agent-kit/output/sessions/`. The Odradek
 observatory mounts it read-only.
+
+## Codex host adapter
+
+`adapters/codex-exec.mjs` is an executable strict-v2 adapter. It launches one
+real `codex exec` session per turn and returns its provider thread ID as the
+Odradek instance identity. Configure it explicitly:
+
+```bash
+export ODRADEK_AGENT_COMMAND_JSON='["node","/absolute/path/to/Odradek/agent-kit/adapters/codex-exec.mjs"]'
+```
+
+It fails closed if Codex does not return a thread ID. Cursor and Claude are not
+declared supported until they have equivalent executable adapters.
