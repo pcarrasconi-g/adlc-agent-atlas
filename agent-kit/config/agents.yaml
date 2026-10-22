@@ -10,6 +10,15 @@ runtime:
   workspaceCwd: ${WORKSPACE_CWD:-.}
   maxDialogueRounds: 12
 
+identityIntegrity:
+  sourceOfTruth: Odradek agent-kit
+  executionModes: [single, multi]
+  # A role key selects a prompt; it is never an execution identity.
+  requireRealHostAgentId: true
+  requireProviderForEachInstance: true
+  prohibitRoleNamesAsInstanceIds: true
+  requireRegisteredInstancesForMultiAgent: true
+
 dialogue:
   # Suggested first pass; the supervisor may invoke other roles by status.
   openingOrder:
@@ -29,6 +38,7 @@ agents:
     enabled: true
     model: host-selected
     promptFile: prompts/product-analyst.md
+    skills: [acceptance-qa-and-recovery, metrics-and-evaluations]
     runtime: local
     responsibilities:
       - Turn work items into a clear goal and acceptance criteria
@@ -42,6 +52,7 @@ agents:
     enabled: true
     model: host-selected
     promptFile: prompts/architect.md
+    skills: [orchestration-and-real-identity, parallel-worktrees-and-review]
     runtime: local
     responsibilities:
       - Technical design, service boundaries, and API contracts
@@ -55,6 +66,7 @@ agents:
     enabled: true
     model: host-selected
     promptFile: prompts/devops.md
+    skills: [safe-workspace-and-guardrails, odradek-observability]
     runtime: local
     responsibilities:
       - CI/CD, container images, and deployment manifests
@@ -68,6 +80,7 @@ agents:
     enabled: true
     model: host-selected
     promptFile: prompts/engineer.md
+    skills: [safe-workspace-and-guardrails, acceptance-qa-and-recovery, metrics-and-evaluations]
     runtime: local
     responsibilities:
       - Implementation and tests in the workspace
@@ -81,6 +94,7 @@ agents:
     enabled: true
     model: host-selected
     promptFile: prompts/reviewer.md
+    skills: [acceptance-qa-and-recovery, safe-workspace-and-guardrails, parallel-worktrees-and-review]
     runtime: local
     responsibilities:
       - Change review, security, tests, and merge readiness
@@ -95,6 +109,7 @@ agents:
     enabled: true
     model: host-selected
     promptFile: prompts/supervisor.md
+    skills: [orchestration-and-real-identity, odradek-observability, metrics-and-evaluations]
     runtime: local
     responsibilities:
       - Choose the next agent from the transcript

@@ -13,7 +13,7 @@ keeps it stable for the entire run. The file has this minimum shape:
     {
       "runId": "run-local-123",
       "round": 1,
-      "agentId": "architect",
+      "agentId": "host-agent-actual-id",
       "at": "2026-01-01T12:00:00.000Z",
       "rawText": "resumen del turno",
       "parsed": {
@@ -23,8 +23,8 @@ keeps it stable for the entire run. The file has this minimum shape:
       },
       "relations": [
         {
-          "from": "orchestrator",
-          "to": "architect",
+          "from": "host-agent-principal-id",
+          "to": "host-agent-actual-id",
           "kind": "delegation",
           "source": "explicit",
           "confidence": 1
@@ -50,10 +50,10 @@ commands at meaningful stages:
 ```bash
 node scripts/odradek-event.mjs init --session checkout-catalogo --goal "Objetivo"
 node scripts/odradek-event.mjs turn --session checkout-catalogo \
-  --agent orchestrator --status running --summary "Delegando arquitectura"
+  --agent host-agent-principal-id --status continue --summary "Delegación preparada"
 node scripts/odradek-event.mjs turn --session checkout-catalogo \
-  --agent architect --status done --summary "Arquitectura lista" \
-  --from orchestrator --to architect --relation delegation
+  --agent host-agent-actual-id --status done --summary "Arquitectura lista" \
+  --from host-agent-principal-id --to host-agent-actual-id --relation delegation
 node scripts/odradek-event.mjs close --session checkout-catalogo --kind done
 ```
 
@@ -62,9 +62,8 @@ redacta patrones comunes de secretos antes de persistirlos.
 
 ## Universal orchestrator instruction
 
-Read `config/agents.yaml` and the prompts for selected roles. Before creating
-subagents, initialize a session with a new ID. Record every delegation with
-`--from`, `--to`, and `--relation delegation`; record each result under the
-agent that produced it. Close the session only after the orchestrator receives
-the final result. Do not store secrets, sensitive file content, or credentials
-in summaries.
+Read `config/agents.yaml`, selected prompts, and assigned skills. A role is a
+prompt selector, never an instance identity. Before creating real subagents,
+initialize a session and record principal/subagent host IDs and providers in a
+manifest. Record delegation and results under real IDs only. Close after the
+final result and gate; never store secrets, sensitive content or credentials.

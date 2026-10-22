@@ -36,6 +36,13 @@ export async function loadAgentPrompt(promptFile: string): Promise<string> {
   return readFile(path.join(CONFIG_ROOT, promptFile), "utf8");
 }
 
+export async function loadAgentSkills(skillIds: string[] = []): Promise<string[]> {
+  return Promise.all(skillIds.map(async (skillId) => {
+    if (!/^[a-z0-9-]+$/.test(skillId)) throw new Error(`Invalid skill id: ${skillId}`);
+    return readFile(path.join(CONFIG_ROOT, "skills", `${skillId}.md`), "utf8");
+  }));
+}
+
 export type McpServersFile = {
   servers: Record<
     string,

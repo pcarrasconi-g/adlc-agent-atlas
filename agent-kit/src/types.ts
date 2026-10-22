@@ -63,6 +63,7 @@ export type PlatformConfig = {
       enabled: boolean;
       model: string;
       promptFile: string;
+      skills?: string[];
       runtime: "local" | "cloud";
       responsibilities: string[];
       mayRequestFrom?: string[];

@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { loadAgentPrompt } from "../config/load.js";
+import { loadAgentPrompt, loadAgentSkills } from "../config/load.js";
 import type { PlatformConfig } from "../types.js";
 import { mcpForAgent } from "./mcp-map.js";
 import type { McpServersFile } from "../config/load.js";
@@ -78,8 +78,9 @@ export async function runAgentTurn(params: {
   }
 
   const system = await loadAgentPrompt(def.promptFile);
+  const skills = await loadAgentSkills(def.skills);
   const allowedMcp = mcpForAgent(params.agentId, params.config.integrations);
-  const prompt = `${system}\n\n---\n\n${params.userMessage}`;
+  const prompt = [system, ...skills, params.userMessage].join("\n\n---\n\n");
   const result = await invokeHost({
     protocol: "odradek.agent.v1",
     agentId: params.agentId,
