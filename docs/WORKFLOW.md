@@ -13,8 +13,15 @@ relationships, retention, and data minimization under the developer's control.
 3. Copy the host-appropriate template from `templates/` into the product
    repository, or add its contents to the first task prompt.
 4. Create a unique session ID before delegating work.
-5. Record meaningful delegation, handoff, waiting, and completion events.
-6. Close the session when the task is complete, blocked, or failed.
+5. Launch a real architect for every task, including questions, reviews, and tiny
+   fixes. Record its returned identity and routing decision before execution.
+6. Create the real specialists and reviewers it assigns, sequentially or in
+   parallel as appropriate. The principal only coordinates and integrates
+   approved delivery. Missing delegation blocks work; it never permits solo work.
+7. Record and verify meaningful delegation, handoff, waiting, result, and review
+   events. Start the viewer and verify that this evidence can be inspected.
+8. Close only after the architect's required results and acceptance evidence exist;
+   otherwise report blocked or failed. Follow [AGENTS.md](../AGENTS.md).
 
 ## What to record
 

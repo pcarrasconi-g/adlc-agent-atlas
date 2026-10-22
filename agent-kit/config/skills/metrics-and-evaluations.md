@@ -8,7 +8,8 @@ without confusing activity volume with quality or inventing evidence.
 ## When to use it
 
 Use while defining an objective, at material checkpoints, and at iteration close.
-Use it for both single-agent and real multi-agent work.
+Apply root `AGENTS.md`: every new task has real architect-first delegation.
+Historical single-agent data may be measured but does not authorize solo execution.
 
 ## Identity and observability invariant
 

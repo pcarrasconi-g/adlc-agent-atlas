@@ -2,9 +2,8 @@
 
 ## Purpose
 
-Run a task with truthful orchestration: delegate only work that is genuinely
-independent, create real subagents before claiming they exist, and make the
-Odradek session an evidence record of those real executions.
+Route every task through a real architect, create the real agents it assigns,
+and preserve evidence of those executions. Root `AGENTS.md` is authoritative.
 
 This skill is portable. A host may call agents *subagents*, *workers*, or
 *child sessions*; the rules below apply regardless of its vocabulary.
@@ -17,8 +16,10 @@ Use this skill whenever an AI host coordinates a task, and especially before:
 - creating a subagent or handing work to another person/tool;
 - emitting an Odradek delegation or closing an Odradek session.
 
-Use the single-agent path for work that is small, coupled, or cannot be split
-without duplicated investigation. Delegation is not a display feature.
+Questions, reviews, translations, and tiny or coupled tasks still require a real
+architect. Parallel execution is optional; architect-first delegation is mandatory.
+The principal only coordinates, records evidence, and integrates approved results.
+Unavailable delegation blocks work rather than authorizing solo execution.
 
 ## Identity invariant
 
@@ -36,28 +37,26 @@ An Odradek `agentId` identifies an execution instance, never a job title.
 - Never fabricate nodes to make a graph look multi-agent. If no child was
   created, report only the real principal.
 
-If a host cannot expose stable instance IDs, use a host-generated opaque run ID
-and state the provider plus identity source in the registration metadata. Do
-not substitute a role name.
+Use the exact identity returned by the host and record its source. If no real
+instance identity is available, report a blocker; never generate a substitute.
 
 ## Procedure
 
 1. Read the objective, acceptance criteria, safety limits, and the relevant
    role profiles/skills.
-2. Choose `single` or `multi` mode before work begins. Record the decision and
-   why it is appropriate.
+2. Use `multi` mode: every task requires the principal and a real architect.
 3. Initialize one Odradek session for the iteration. Register the real
    principal instance ID and provider.
-4. In `multi` mode, partition ownership by artifact or responsibility. Each
-   child needs a bounded task, relevant skills, permitted files/tools, and an
-   expected evidence artifact.
+4. Create the real architect first and record its routing decision. It assigns
+   ownership, dependencies, skills, acceptance criteria, and reviewers. It may
+   answer architecture-only tasks; other work goes to real assigned specialists.
 5. Create each child in the host. Only after successful creation, register its
    returned real ID and emit the delegation from the real principal ID to that
    real child ID.
 6. Record meaningful checkpoints under the instance that produced them:
    decision, implementation, test result, block, handoff, or escalation.
-7. Reconcile results in the principal. Resolve conflicts using evidence rather
-   than inventing agreement among agents.
+7. Collect results in the principal. Return technical conflicts to the architect
+   and assigned agents; the principal does not implement, test, or self-review.
 8. Close only after required checks and the Odradek identity/observability
    gate pass. Preserve a blocked or error session when work cannot close.
 
@@ -65,7 +64,8 @@ not substitute a role name.
 
 For every session, persist or link:
 
-- session mode (`single` or `multi`), principal ID, provider, and goal;
+- session mode (`multi`), principal ID, host, and goal;
+- real architect creation, routing decision, and required assignments;
 - for each real child: provider-returned ID, assigned role profile, bounded
   task, delegated-by ID, and completion/error state;
 - commands/tests/checks actually run and their concise outcome;
@@ -81,4 +81,3 @@ For every session, persist or link:
 - Do not make a subagent responsible for work that the principal performed.
 - Escalate when the task needs authority, secrets, a production action, or a
   decision outside the accepted scope.
-

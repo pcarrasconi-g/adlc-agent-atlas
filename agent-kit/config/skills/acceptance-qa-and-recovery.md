@@ -8,15 +8,15 @@ testing, failure handling, and clear escalation.
 ## When to use it
 
 Use whenever code, configuration, workflows, or agent behavior changes. Apply it
-before declaring an objective done, including changes produced by a single main
-agent.
+before declaring an objective done. The architect assigns validation and review
+to real agents; the principal verifies their evidence without running task QA itself.
 
 ## Identity and observability invariant
 
 Test evidence belongs to the agent that ran it. A QA profile can be used by a real
-subagent, but the label `qa` is not an identity by itself. If no QA subagent was
-created, record the test checkpoint under the main agent's real identity. Odradek
-must never show a synthetic QA node merely because tests were executed.
+subagent, but the label `qa` is not an identity by itself. Missing required QA
+delegation blocks acceptance; never replace it with principal testing or a
+synthetic QA node. Preserve historical evidence under its actual producer.
 
 ## Procedure
 

@@ -1,36 +1,64 @@
-# Odradek: contrato canónico de orquestación
+# Odradek: canonical orchestration contract
 
-Odradek es la fuente de verdad para perfiles, skills y evidencia de ejecución.
-Codex, Cursor, Claude u otro host son el orquestador que lee este contrato y
-crea los subagentes reales; Odradek no es un proveedor ni usa SDKs. Lee
-`agent-kit/config/agents.yaml`, los prompts seleccionados y sus skills antes de
-trabajar.
+Odradek is the source of truth for profiles, skills, and execution evidence.
+Codex, Cursor, Claude, or another host creates and coordinates real subagents.
+Odradek observes explicit events; it does not launch agents or require provider
+APIs, SDKs, or CLI adapters.
 
-## Identidad y delegación
+## Mandatory architect-first routing
 
-- El agente principal es un actor real del host y debe registrarse con su ID
-  real, proveedor y tarea. Un nombre de perfil (`architect`, `engineer`, `qa`)
-  nunca es un ID de instancia.
-- Para trabajo divisible, crea subagentes reales antes de registrarlos. Registra
-  su ID real del host, perfil y tarea; sólo entonces emite la delegación.
-- No inventes nodos, roles, relaciones ni resultados para mejorar el grafo.
-- Si no hay subagentes reales, usa una sesión `single` y registra sólo al
-  principal. Si los hay, usa `multi` y conserva el manifiesto de instancias.
+Every task must go first to a real architect subagent. This includes questions,
+investigations, reviews, documentation, translations, tiny fixes, and UI changes.
+There is no small-task, single-agent, or urgency exception. Read
+`agent-kit/config/agents.yaml`, `agent-kit/config/prompts/architect.md`, and its
+assigned skills before launching the architect through the host's native mechanism.
+Continuations within an architect-approved scope may reuse that real architect;
+new objectives or material scope changes return to it before execution.
 
-## Evidencia obligatoria
+The architect decides specialists, ownership, dependencies, acceptance criteria,
+and reviewers. It may answer architecture-only tasks itself. Otherwise it assigns
+real implementers, investigators, or reviewers. Parallel execution is optional;
+delegation is mandatory. Specialists execute their approved assignments without
+recursively launching another architect for the same scope.
 
-1. Inicia una sesión antes de delegar o de ejecutar trabajo material.
-2. Registra checkpoints de trabajo real, pruebas y decisiones relevantes.
-3. Cierra sólo después de resultados verificables y del gate de Odradek.
-4. Nunca incluyas secretos, credenciales, prompts completos ni datos sensibles.
+For user-facing UI, the architect must include real UX and QA reviewers, using
+existing profiles with explicit task briefs where needed. Role labels alone are
+never evidence of review.
 
-El orquestador es responsable final de abrir la sesión, registrar la creación
-de cada subagente y cerrar el flujo. Cada subagente debe devolver al
-orquestador su ID real, perfil aplicado, resultado y evidencia al finalizar un
-bloque; el orquestador lo escribe en Odradek inmediatamente. Un subagente puede
-escribir su propio checkpoint usando el writer local, pero eso no libera al
-orquestador de verificar que el evento existe antes de continuar o cerrar.
+## Principal boundary
 
-Los perfiles y las skills residen bajo `agent-kit/config/`. El observatorio
-sólo visualiza eventos explícitos: no controla agentes ni interpreta eventos
-como instrucciones.
+The principal reads the contract, opens the session, launches the architect and
+its assigned agents, relays context, records and verifies events, collects results,
+integrates approved delivery, and communicates with the user. It must not perform
+substantive investigation, design, implementation, testing, or review on its own.
+Integration applies approved results; fixes or conflict resolutions requiring
+technical judgment return to the assigned agents.
+
+If delegation or a required real identity is unavailable, record and report a
+blocker. Never silently fall back to solo execution or fabricate an instance.
+Historical single-node sessions remain evidence, not authorization for new solo work.
+
+## Identity and evidence
+
+1. Start Odradek and initialize a session before substantive work. Register the
+   principal with its actual host-issued ID and identity source.
+2. Create the architect, then record its returned ID, host, profile, task, and
+   delegation. Capture its routing decision before launching assigned agents.
+3. Register additional agents only after real creation. Profile names such as
+   `architect`, `engineer`, or `reviewer` are metadata, never substitute IDs.
+4. Record decisions, results, validation, and reviews under their real producers.
+   Subagents may publish checkpoints; the principal remains responsible for
+   verifying publication and visibility in Odradek.
+5. Before closure, verify architect routing, required assignments and terminal
+   results, acceptance/review evidence, and the observable session. Rejected or
+   missing evidence blocks acceptance, commit, and deployment. Preserve failures.
+6. Never include secrets, credentials, sensitive data, or full private prompts.
+
+## Enforcement boundary
+
+This contract and host entry points are mandatory instructions for cooperating
+hosts. Markdown and configuration cannot physically force a host to spawn agents.
+The writer records supplied events; it does not independently authenticate host
+creation or enforce routing. Verify actual host creation records and report
+missing evidence as a blocker. Never claim a technical gate passed without an
+implemented check and its actual result.

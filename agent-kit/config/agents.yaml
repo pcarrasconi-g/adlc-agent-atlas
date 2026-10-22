@@ -12,7 +12,7 @@ runtime:
 
 identityIntegrity:
   sourceOfTruth: Odradek agent-kit
-  executionModes: [single, multi]
+  executionModes: [multi]
   # A role key selects a prompt; it is never an execution identity.
   requireRealHostAgentId: true
   requireProviderForEachInstance: true
@@ -20,10 +20,11 @@ identityIntegrity:
   requireRegisteredInstancesForMultiAgent: true
 
 dialogue:
-  # Suggested first pass; the supervisor may invoke other roles by status.
+  # Mandatory first assignment; the architect routes later work.
+  # Declarative host guidance does not prove a real instance was created.
   openingOrder:
-    - product-analyst
     - architect
+    - product-analyst
     - devops
     - engineer
     - reviewer
@@ -55,11 +56,18 @@ agents:
     skills: [orchestration-and-real-identity, parallel-worktrees-and-review]
     runtime: local
     responsibilities:
+      - Route every task including questions, reviews, documentation, and tiny fixes
+      - Assign real specialists, ownership, dependencies, acceptance criteria, and reviewers
+      - Require real UX and QA reviewers for user-facing changes
+      - Answer architecture-only tasks directly and delegate other execution
       - Technical design, service boundaries, and API contracts
       - Align with the product platform without deploying agents there
     mayRequestFrom:
       - product-analyst
       - devops
+      - engineer
+      - reviewer
+      - supervisor
 
   devops:
     displayName: DevOps / Platform
@@ -112,7 +120,8 @@ agents:
     skills: [orchestration-and-real-identity, odradek-observability, metrics-and-evaluations]
     runtime: local
     responsibilities:
-      - Choose the next agent from the transcript
+      - Coordinate the architect-approved assignments and real host instances
+      - Return new objectives and material scope changes to the architect
       - Detect blockers and loops; close or escalate when needed
     # Does not use code tools; reasons only over the message bus.
 

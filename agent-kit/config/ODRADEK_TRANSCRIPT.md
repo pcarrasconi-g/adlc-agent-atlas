@@ -6,19 +6,19 @@ keeps it stable for the entire run. The file has this minimum shape:
 
 ```json
 {
-  "sessionId": "checkout-catalogo-2026-10-21",
+  "sessionId": "checkout-catalog-2026-10-21",
   "kind": "working|done|error|escalate",
-  "goal": "objetivo de la sesión",
+  "goal": "Session objective",
   "transcript": [
     {
       "runId": "run-local-123",
       "round": 1,
       "agentId": "host-agent-actual-id",
       "at": "2026-01-01T12:00:00.000Z",
-      "rawText": "resumen del turno",
+      "rawText": "Turn summary",
       "parsed": {
         "status": "continue|blocked|done|escalate_human",
-        "summary": "resultado breve",
+        "summary": "Brief result",
         "suggestedNextSpeaker": "engineer"
       },
       "relations": [
@@ -48,20 +48,24 @@ with the writer included in this kit. The AI host only needs to run these local
 commands at meaningful stages:
 
 ```bash
-node scripts/odradek-event.mjs init --session checkout-catalogo --goal "Objetivo"
-node scripts/odradek-event.mjs turn --session checkout-catalogo \
-  --agent host-agent-principal-id --status continue --summary "Delegación preparada"
-node scripts/odradek-event.mjs turn --session checkout-catalogo \
-  --agent host-agent-actual-id --status done --summary "Arquitectura lista" \
+node scripts/odradek-event.mjs init --session checkout-catalog --goal "Objective"
+node scripts/odradek-event.mjs turn --session checkout-catalog \
+  --agent host-agent-principal-id --status continue --summary "Delegation prepared"
+node scripts/odradek-event.mjs turn --session checkout-catalog \
+  --agent host-agent-actual-id --status done --summary "Architecture ready" \
   --from host-agent-principal-id --to host-agent-actual-id --relation delegation
-node scripts/odradek-event.mjs close --session checkout-catalogo --kind done
+node scripts/odradek-event.mjs close --session checkout-catalog --kind done
 ```
 
-El emisor escribe de forma atómica, usa un lock para turnos concurrentes y
-redacta patrones comunes de secretos antes de persistirlos.
+Replace illustrative IDs with actual host-returned identities. These commands
+record events; they never create agents. The writer writes atomically, locks
+concurrent turns, and redacts common secret patterns before persistence.
 
 ## Universal orchestrator instruction
 
+Follow root `AGENTS.md`: every task starts with a real architect whose routing
+assigns the remaining work and reviews. The principal coordinates and verifies
+evidence, never substitutes its own task execution. Missing delegation blocks work.
 Read `config/agents.yaml`, selected prompts, and assigned skills. A role is a
 prompt selector, never an instance identity. Before creating real subagents,
 initialize a session and record principal/subagent host IDs and providers in a

@@ -13,6 +13,8 @@ main working tree.
 
 Do not use parallelism when agents must edit the same files, one decision
 depends on another's result, or the overhead is larger than the work.
+Use sequential assignments in those cases. Every task still starts with a real
+architect under root `AGENTS.md`; sequential execution is not solo execution.
 
 ## Before delegation
 
@@ -48,8 +50,8 @@ Review is a real activity, not a role label:
 - The reviewer must be a real person or real agent instance with an identifiable
   execution record.
 - The review must name the revision, scope, checks run, findings, and decision.
-- If the principal self-reviews, record it as a principal review; do not create
-  a fictional `reviewer` node.
+- The principal cannot substitute self-review for an assigned review. Missing
+  required reviewers block acceptance; never create fictional reviewer nodes.
 - A no-findings result is valid only when the reviewer actually inspected the
   declared scope and evidence.
 - External systems such as GitHub or CodeRabbit may be cited only after their
@@ -76,4 +78,3 @@ artifact to a real execution instance.
   Odradek events.
 - Escalate if integration requires protected-branch rights, remote credentials,
   production access, or a scope decision that was not delegated.
-

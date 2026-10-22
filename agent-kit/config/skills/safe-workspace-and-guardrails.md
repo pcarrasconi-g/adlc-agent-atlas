@@ -9,7 +9,8 @@ tools, secrets, files, and approval-required actions.
 
 Use before any agent edits a workspace, executes commands, installs dependencies,
 changes infrastructure, or touches data that could be sensitive. It applies to a
-single main agent and to every real subagent.
+principal's coordination actions and every real subagent's assigned execution.
+Every new task follows the architect-first contract in root `AGENTS.md`.
 
 Do not use this skill to invent access, bypass a sandbox, or replace a project's
 own security policy.
@@ -24,8 +25,8 @@ Odradek records **executions**, not job titles.
    capture its real runtime identifier, provider, assigned task, and parent
    identifier.
 3. Publish that real identity to Odradek before its first checkpoint.
-4. In a single-agent task, record only the real main-agent identity (for example,
-   `codex-main`); never create synthetic `qa`, `engineer`, or `reviewer` nodes.
+4. Never create synthetic nodes. Missing required architect or specialist
+   delegation blocks new work; historical single-node records stay historical.
 5. A role may be mentioned in a task description, but it must never be emitted as
    an agent identity unless it is the identity of a real running instance.
 

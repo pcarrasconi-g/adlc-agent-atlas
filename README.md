@@ -31,14 +31,19 @@ set `ODRADEK_PORT=8091` in `.env` before starting this copy.
 
 ## Run an explicit session
 
+First follow [AGENTS.md](AGENTS.md): the host creates a real architect for every
+task and executes its routing decision through real assigned agents. The principal
+coordinates and verifies evidence. In this example, replace the ID placeholders
+with actual host-returned identities; the commands do not create any agents.
+
 ```bash
 node agent-kit/scripts/odradek-event.mjs init \
   --session checkout-catalog --goal "Improve checkout validation"
 
 node agent-kit/scripts/odradek-event.mjs turn \
-  --session checkout-catalog --agent architect --parent orchestrator \
+  --session checkout-catalog --agent HOST_ARCHITECT_ID --parent HOST_PRINCIPAL_ID \
   --status done --summary "API contract documented" \
-  --from orchestrator --to architect --relation delegation
+  --from HOST_PRINCIPAL_ID --to HOST_ARCHITECT_ID --relation delegation
 
 node agent-kit/scripts/odradek-event.mjs close \
   --session checkout-catalog --kind done
@@ -53,8 +58,14 @@ or credentials.
 1. Clone this repository once and run Odradek locally.
 2. Open the product repository with your preferred AI orchestrator.
 3. Add one of the templates from `templates/` to that product repository.
-4. Ask the orchestrator to read `agent-kit/config/agents.yaml`, select roles,
-   and emit explicit local session events.
+4. Instruct the host to follow `AGENTS.md`, launch a real architect for every task,
+   create its assigned specialists, and publish/verify explicit session evidence.
 
 See [the workflow guide](docs/WORKFLOW.md). Odradek is a voluntary learning and
-observability framework; teams decide which agents, skills, and tasks to use.
+observability framework that teams choose to adopt. Once adopted, architect-first
+routing is mandatory for every task; it is not an optional per-task decision.
+
+The legacy Agent Kit dialogue runner is not a compliant host execution path: its
+role-based turns do not establish real subagent identities. Use host-native
+delegation and the explicit writer under `AGENTS.md`. The writer itself cannot
+authenticate host creation or force a host to follow instructions.
