@@ -17,7 +17,9 @@ Use this skill whenever an AI host coordinates a task, and especially before:
 - emitting an Odradek delegation or closing an Odradek session.
 
 Questions, reviews, translations, and tiny or coupled tasks still require a real
-architect. Parallel execution is optional; architect-first delegation is mandatory.
+architect. The architect plans once per approved task scope and chooses the minimum
+sufficient delegation for its complete delivery. Parallel execution is optional;
+architect-first delegation is mandatory.
 The principal only coordinates, records evidence, and integrates approved results.
 Unavailable delegation blocks work rather than authorizing solo execution.
 
@@ -47,17 +49,22 @@ instance identity is available, report a blocker; never generate a substitute.
 2. Use `multi` mode: every task requires the principal and a real architect.
 3. Initialize one Odradek session for the iteration. Register the real
    principal instance ID and provider.
-4. Create the real architect first and record its routing decision. It assigns
-   ownership, dependencies, skills, acceptance criteria, and reviewers. It may
-   answer architecture-only tasks; other work goes to real assigned specialists.
+4. Create the real architect first and record its one task plan. It assigns the
+   minimum sufficient ownership, dependencies, skills, acceptance criteria,
+   reviewers, integration/commit, and deployment when applicable. It may answer
+   architecture-only tasks; other work goes to real assigned specialists.
 5. Create each child in the host. Only after successful creation, register its
    returned real ID and emit the delegation from the real principal ID to that
    real child ID.
 6. Record meaningful checkpoints under the instance that produced them:
    decision, implementation, test result, block, handoff, or escalation.
-7. Collect results in the principal. Return technical conflicts to the architect
+7. Reuse the approved plan and assigned instances across sequential phases. Do
+   not create a phase-specific duplicate agent unless the architect updates the
+   plan for a material scope change, independent expertise or review, a risk
+   boundary, or a real parallel benefit.
+8. Collect results in the principal. Return technical conflicts to the architect
    and assigned agents; the principal does not implement, test, or self-review.
-8. Close only after required checks and the Odradek identity/observability
+9. Close only after required checks and the Odradek identity/observability
    gate pass. Preserve a blocked or error session when work cannot close.
 
 ## Required evidence
@@ -65,7 +72,7 @@ instance identity is available, report a blocker; never generate a substitute.
 For every session, persist or link:
 
 - session mode (`multi`), principal ID, host, and goal;
-- real architect creation, routing decision, and required assignments;
+- real architect creation, once-per-task plan, and required assignments;
 - for each real child: provider-returned ID, assigned role profile, bounded
   task, delegated-by ID, and completion/error state;
 - commands/tests/checks actually run and their concise outcome;

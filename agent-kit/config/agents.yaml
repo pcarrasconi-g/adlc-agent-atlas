@@ -20,14 +20,12 @@ identityIntegrity:
   requireRegisteredInstancesForMultiAgent: true
 
 dialogue:
-  # Mandatory first assignment; the architect routes later work.
+  # Mandatory once-per-task planning assignment. The architect's initial plan
+  # selects the minimum sufficient real agents for the whole scope; do not use
+  # this legacy order to create one agent per delivery phase.
   # Declarative host guidance does not prove a real instance was created.
   openingOrder:
     - architect
-    - product-analyst
-    - devops
-    - engineer
-    - reviewer
   # Roles allowed to close an objective with status "done".
   closers:
     - reviewer
@@ -57,6 +55,8 @@ agents:
     runtime: local
     responsibilities:
       - Route every task including questions, reviews, documentation, and tiny fixes
+      - Define one end-to-end task plan and minimum sufficient real delegation
+      - Cover implementation, validation/review, commit/integration, and deployment when applicable
       - Assign real specialists, ownership, dependencies, acceptance criteria, and reviewers
       - Require real UX and QA reviewers for user-facing changes
       - Answer architecture-only tasks directly and delegate other execution

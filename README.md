@@ -31,9 +31,10 @@ set `ODRADEK_PORT=8091` in `.env` before starting this copy.
 
 ## Run an explicit session
 
-First follow [AGENTS.md](AGENTS.md): the host creates a real architect for every
-task and executes its routing decision through real assigned agents. The principal
-coordinates and verifies evidence. In this example, replace the ID placeholders
+First follow [AGENTS.md](AGENTS.md): the host creates a real architect once per
+task. Its initial plan chooses the minimum sufficient real agents for the full
+scope, including validation, integration, and deployment when applicable. The
+principal coordinates and verifies evidence. In this example, replace the ID placeholders
 with actual host-returned identities; the commands do not create any agents.
 
 ```bash
@@ -58,12 +59,14 @@ or credentials.
 1. Clone this repository once and run Odradek locally.
 2. Open the product repository with your preferred AI orchestrator.
 3. Add one of the templates from `templates/` to that product repository.
-4. Instruct the host to follow `AGENTS.md`, launch a real architect for every task,
-   create its assigned specialists, and publish/verify explicit session evidence.
+4. Instruct the host to follow `AGENTS.md`, launch a real architect once per task,
+   create the minimum specialists in its end-to-end plan, and publish/verify
+   explicit session evidence.
 
 See [the workflow guide](docs/WORKFLOW.md). Odradek is a voluntary learning and
 observability framework that teams choose to adopt. Once adopted, architect-first
-routing is mandatory for every task; it is not an optional per-task decision.
+routing is mandatory once per task; the architect, not delivery phases, determines
+the minimum sufficient delegation.
 
 The legacy Agent Kit dialogue runner is not a compliant host execution path: its
 role-based turns do not establish real subagent identities. Use host-native

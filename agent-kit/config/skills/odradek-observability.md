@@ -20,17 +20,22 @@ contract.
    accepted its initialization.
 2. Create one stable session ID for the iteration and record its goal, mode,
    principal instance ID, provider, and workspace/revision when available.
-3. Create the real architect first for every task, then record its routing decision
-   and required assignments under root `AGENTS.md`.
+3. Create the real architect once for the task, then record its end-to-end plan
+   and minimum sufficient required assignments under root `AGENTS.md`. The plan
+   covers implementation, validation/review, integration/commit, and deployment
+   when applicable.
 4. Emit a delegation only after a real child instance exists. Link the real
    principal instance ID to the real child instance ID.
 5. Record concise checkpoints for material facts: a design decision, a changed
    artifact, a test result, a guardrail block, a retry, a review outcome, or an
    escalation.
 6. Attach links or paths to durable evidence rather than copying long logs.
-7. Close as `done` only after the declared acceptance checks pass. Use
+7. Reuse the plan's real agents across sequential phases. Add a new instance only
+   when the architect records a material scope change, independent expertise or
+   review, a risk boundary, or a real parallel benefit.
+8. Close as `done` only after the declared acceptance checks pass. Use
    `working`, `blocked`, `error`, or `escalate` truthfully otherwise.
-8. Run the Odradek gate and inspect the resulting graph before presenting the
+9. Run the Odradek gate and inspect the resulting graph before presenting the
    iteration as complete.
 
 ## Identity and graph rules
@@ -69,7 +74,7 @@ Before calling an iteration complete, verify:
 - the principal ID matches the real host instance;
 - the declared mode matches the observed topology;
 - every delegated child has a real registration and terminal record;
-- the real architect's routing and required specialist/reviewer results are present;
+- the real architect's one task plan and required specialist/reviewer results are present;
 - required tests/evaluations and their producing agents' evidence are present;
 - no secrets were written to the transcript.
 

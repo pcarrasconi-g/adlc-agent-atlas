@@ -13,14 +13,19 @@ relationships, retention, and data minimization under the developer's control.
 3. Copy the host-appropriate template from `templates/` into the product
    repository, or add its contents to the first task prompt.
 4. Create a unique session ID before delegating work.
-5. Launch a real architect for every task, including questions, reviews, and tiny
-   fixes. Record its returned identity and routing decision before execution.
-6. Create the real specialists and reviewers it assigns, sequentially or in
-   parallel as appropriate. The principal only coordinates and integrates
-   approved delivery. Missing delegation blocks work; it never permits solo work.
+5. Launch a real architect once per task, not per delivery phase, including
+   questions, reviews, and tiny fixes. Record its returned identity and end-to-end
+   plan before execution.
+6. Create only the minimum real specialists and reviewers in that plan. The plan
+   covers implementation, validation/review, commit/integration, and deployment
+   when applicable; sequential phases reuse assigned agents. Add another only
+   after architect approval for a material scope change, independent expertise or
+   review, a risk boundary, or a real parallel benefit. The principal only
+   coordinates and integrates approved delivery. Missing delegation blocks work;
+   it never permits solo work.
 7. Record and verify meaningful delegation, handoff, waiting, result, and review
    events. Start the viewer and verify that this evidence can be inspected.
-8. Close only after the architect's required results and acceptance evidence exist;
+8. Close only after the architect's required plan results and acceptance evidence exist;
    otherwise report blocked or failed. Follow [AGENTS.md](../AGENTS.md).
 
 ## What to record

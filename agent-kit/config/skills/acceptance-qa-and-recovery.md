@@ -8,8 +8,9 @@ testing, failure handling, and clear escalation.
 ## When to use it
 
 Use whenever code, configuration, workflows, or agent behavior changes. Apply it
-before declaring an objective done. The architect assigns validation and review
-to real agents; the principal verifies their evidence without running task QA itself.
+before declaring an objective done. The architect includes validation and review
+in its once-per-task plan and assigns the minimum sufficient real agents; the
+principal verifies their evidence without running task QA itself.
 
 ## Identity and observability invariant
 
@@ -38,6 +39,9 @@ synthetic QA node. Preserve historical evidence under its actual producer.
    needed to reproduce it.
 6. Repair only within the assigned scope, rerun the affected checks, then rerun
    the closing acceptance suite. A prior green run is not evidence after a change.
+   Reuse the planned validator where possible; create another only when the
+   architect updates the plan for independent review, added expertise, risk, or
+   real parallel benefit.
 7. Mark work `done` only if every acceptance criterion has a corresponding result
    or an explicitly approved exception.
 

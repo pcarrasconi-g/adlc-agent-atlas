@@ -14,7 +14,9 @@ main working tree.
 Do not use parallelism when agents must edit the same files, one decision
 depends on another's result, or the overhead is larger than the work.
 Use sequential assignments in those cases. Every task still starts with a real
-architect under root `AGENTS.md`; sequential execution is not solo execution.
+architect under root `AGENTS.md`; it defines the minimum sufficient team once for
+the full scope. Sequential execution is not solo execution or a reason to create
+new phase-specific agents.
 
 ## Before delegation
 
@@ -28,6 +30,10 @@ architect under root `AGENTS.md`; sequential execution is not solo execution.
    profile names are not agent IDs.
 5. Create a Git worktree/branch for each isolated implementation when Git is
    available. Record the branch, base revision, and worktree path as evidence.
+6. Do not split implementation, validation, commit, or deployment into separate
+   agents solely because they are different phases. Add an instance only for a
+   material scope change, independent expertise or review, a risk boundary, or
+   a real parallel benefit recorded by the architect.
 
 ## Worktree procedure
 

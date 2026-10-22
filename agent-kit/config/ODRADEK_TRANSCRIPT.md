@@ -63,9 +63,13 @@ concurrent turns, and redacts common secret patterns before persistence.
 
 ## Universal orchestrator instruction
 
-Follow root `AGENTS.md`: every task starts with a real architect whose routing
-assigns the remaining work and reviews. The principal coordinates and verifies
-evidence, never substitutes its own task execution. Missing delegation blocks work.
+Follow root `AGENTS.md`: every task starts with one real architect whose initial
+plan assigns the minimum sufficient work and reviews for the full scope, including
+validation, commit/integration, and deployment when applicable. Do not create
+duplicate agents merely for later phases; amend the plan only for a material scope
+change, independent expertise or review, a risk boundary, or real parallel benefit.
+The principal coordinates and verifies evidence, never substitutes its own task
+execution. Missing required delegation blocks work.
 Read `config/agents.yaml`, selected prompts, and assigned skills. A role is a
 prompt selector, never an instance identity. Before creating real subagents,
 initialize a session and record principal/subagent host IDs and providers in a
