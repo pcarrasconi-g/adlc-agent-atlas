@@ -5,6 +5,148 @@ Codex, Cursor, Claude, or another host creates and coordinates real subagents.
 Odradek observes explicit events; it does not launch agents or require provider
 APIs, SDKs, or CLI adapters.
 
+## Order of operations (hard rule)
+
+Before **any** read, search, or work in the user's repository (including a first
+"look around"), the principal must: (1) read this contract, (2) run the
+observatory preflight below, and (3) resolve its state (`active`, `declined`, or
+`unavailable`). Only then may it launch the architect. Reading the user's code
+first is a contract violation; do not "just check one thing". Host entry points
+(`.cursor/rules/odradek.mdc`, `CLAUDE.md`, templates) repeat this rule.
+
+### New task vs continuation
+
+Preflight runs once per **task**. A *continuation* stays inside the
+architect-approved scope and reuses its session, plan, and agents. A *new task*
+has a new objective or materially different scope and needs a new preflight,
+session ID, and architect.
+
+- Continuation: "now also run the tests" after an approved fix; "fix the review
+  finding"; "commit what we just built"; a follow-up question about the same change.
+- New task: a different feature or bug; a new repository; an unrelated question
+  after the previous one closed; any request that adds scope the architect plan
+  did not cover (return to the architect, and open a new session if the objective changed).
+- Doubt means new task.
+
+### Host-issued IDs
+
+An agent ID is **host-issued** only if the host runtime returned it when the
+instance was created, or exposes it as the current conversation/session ID:
+
+| Host | Principal ID | Subagent ID |
+| --- | --- | --- |
+| Cursor | The ID Cursor exposes for the current agent (the UUID in the agent-store path / agent transcript name). Canonical choice: it is the same ID subagents report as their parent, so one ID identifies the principal everywhere. Do not use any other chat UUID. | The agent/task ID returned by the Task tool when the subagent is created |
+| Claude Code | The session ID exposed by the host | The ID/handle returned when the subagent is launched |
+| Codex | The thread/session ID exposed by the host | The ID returned when the subagent is spawned |
+
+Never derive an ID from the session slug, task name, profile (`architect`,
+`engineer`...), subagent type, timestamp, or a `HOST_*_ID` placeholder, and never
+invent one. If the host does not provide a real ID, **block**: report that the
+identity is unavailable, do not init or register, and do not claim observability.
+The writer rejects visible placeholders, profile names, and the session name; it
+cannot prove an ID is real.
+
+### Host subagent types vs Odradek profiles
+
+Host types are launchers, not profiles. Record the Odradek profile
+(`agent-kit/config/agents.yaml`) in `agent_registered`; the host type is
+metadata at most.
+
+| Host subagent type | Odradek profile |
+| --- | --- |
+| `architecture-reviewer`, `Plan`-style architect agents | `architect` |
+| `generalPurpose`, `best-of-n-runner` doing implementation | `engineer` |
+| `explore` | the profile of the requester's assignment (usually `architect` or `engineer`); never its own profile |
+| `qa-verifier`, `bugbot`, `security-review`, `ci-investigator` | `reviewer` |
+| `devops`-style / deploy / CI agents | `devops` |
+| Anything unmapped | Ask the architect to pick the closest profile in `agents.yaml`; do not invent a profile |
+
+### Visibility is verified, never assumed
+
+The path printed by the writer (`odradek-event`) only proves a local file was
+written. It is **not** evidence that the session is visible in the observatory.
+Visibility is proven only by `observatory:verify` (exit code 0) against the real
+API:
+
+```bash
+npm --prefix <ODRADEK_ROOT>/agent-kit run observatory:verify -- --session <ID> [--require-registration] [--no-close]
+```
+
+It prints JSON and exits non-zero if the session is not visible, or init,
+closure, or the required events are missing.
+
+### If verify fails while the service is healthy
+
+If `observatory:verify` fails with `api_reachable: true` and `visible_in_api: false`
+(the JSON includes a `hint`; probable cause: the container's bind mount
+`./agent-kit/output:/watched:ro` points to a stale directory), the principal must:
+
+1. Retry once after a few seconds.
+2. If it persists, diagnose without restarting: with the user's permission, compare
+   the container mount with `<ODRADEK_ROOT>/agent-kit/output` using read-only
+   commands only; otherwise ask the user.
+3. Ask the user for a decision before recreating the container; never recreate or
+   start Docker on its own.
+4. Report `FALLÓ: observabilidad no verificada` and do not mark the task done.
+5. Do not switch to `unavailable` to sidestep the failure; that state is only for
+   failed init/startup or the user's choice.
+
+### Closure checklist (when `active`; all items, in order)
+
+1. Architect plan (original or amended) and routing-evidence justification exist.
+2. Every assigned agent has a real host-issued ID, was registered with
+   `agent_registered`, and has a terminal result.
+3. Acceptance/review evidence exists from the real reviewers.
+4. Session closed with the writer `close`.
+5. `observatory:verify --session <ID>` was **executed** **without `--no-close`** and exited 0
+   (paste the result). `--no-close` is only for mid-session checks; its exit 0 never
+   satisfies this step or the closure.
+6. Final report states PASÓ / FALLÓ / NO EJECUTADA for each check.
+
+If step 5 did not run, report `verify: NO EJECUTADA` and do not close the task as
+done: report it as incomplete/blocked. If it failed, report FALLÓ and the failed
+checks. When declined/unavailable, items 4-5 do not apply and no visibility claim is made.
+
+### One instance per checkout (port and instance are not shared)
+
+Each checkout of Odradek has its own `ODRADEK_PORT` and `ODRADEK_INSTANCE`,
+declared in its own `<ODRADEK_ROOT>/.env` (not versioned). The preflight queries
+**only** this checkout's URL; the port is never shared between checkouts, never
+assumed to be 8090, and must not be another instance's port. If `.env` lacks the
+port or instance (`reason: setup_required`), run
+`npm --prefix <ODRADEK_ROOT>/agent-kit run observatory:setup`: it adds only the
+missing `ODRADEK_INSTANCE` (directory name + short path hash), a free deterministic
+`ODRADEK_PORT` (8100-8899), and a random local `POSTGRES_PASSWORD` (never printed),
+without overwriting existing values. Setup only edits `.env`; it starts nothing.
+Starting the stack (`docker compose up -d --build` from `<ODRADEK_ROOT>`) still needs
+explicit user consent, unless the user already gave it for the task. Never stop,
+restart, or modify containers, volumes, or networks of other instances.
+
+### Instance ownership (healthy_own vs healthy_foreign)
+
+A healthy `/api/projects` answer does not prove the service belongs to **this**
+checkout (`<ODRADEK_ROOT>`); another checkout or a stale container may own the port.
+`observatory:check` therefore writes a short-lived probe transcript into
+`<ODRADEK_ROOT>/agent-kit/output/sessions/`, asks the API whether it imported it, and
+always removes the file and the probe session. Results (`service`):
+
+- `healthy_own`: the instance sees this checkout. Only this state proceeds to `starting`.
+- `healthy_foreign` (`reason: foreign_instance`) or `healthy_unknown`
+  (`reason: instance_unknown`, probe could not run): treated the same. Exit code != 0.
+  **Never** enter `starting`/`active` and never publish. Ask the user **once**:
+  (a) start this copy on another port (`ODRADEK_PORT`/`ODRADEK_INSTANCE` in `.env`,
+  only with explicit consent; no Docker otherwise), (b) point to another URL
+  (`--base-url` or `ODRADEK_BASE_URL`), or (c) continue without the observatory
+  (`declined`). Do not ask again for the same task.
+- `unavailable`: as in the preflight rules below.
+
+The URL is resolved as `--base-url` > `ODRADEK_BASE_URL` > `ODRADEK_PORT` in
+`<ODRADEK_ROOT>/.env` > (none: `setup_required`; 8090 is never assumed); check/verify print `url` and
+`urlSource`. With several checkouts, give each its own `ODRADEK_PORT` and
+`ODRADEK_INSTANCE`; each session is only valid in the instance of its checkout.
+`observatory:verify` repeats the ownership probe and fails with
+`reason: foreign_instance` on a foreign one.
+
 ## Mandatory observatory preflight (before architect routing)
 
 At the beginning of each task, before creating the architect or doing substantive
@@ -13,8 +155,8 @@ work, check the local observatory once. Use
 check the configured public `/api/projects` endpoint). Keep exactly one
 task-scoped observability state, including the transient `starting` state:
 
-- A successful health check means the service is `healthy`, not yet that task
-  observability is `active`. Do not ask the user. Set `starting`, generate a
+- A successful health check means the service is `healthy_own`, not yet that task
+  observability is `active` (`healthy_foreign`/`healthy_unknown` never qualify; see above). Do not ask the user. Set `starting`, generate a
   candidate session ID in host memory, and submit exactly the atomic writer
   `init` containing the goal, mode, and real principal identity. `starting` does
   not permit any other event or observability claim.
@@ -124,14 +266,16 @@ Historical single-node sessions remain evidence, not authorization for new solo 
    only when observability is `active`; otherwise retain them as normal host
    evidence.
 3. Create additional agents before using their real identities. When active,
-   register them in Odradek only after real creation. Profile names such as
+   register them in Odradek only after real creation with the writer
+   `agent_registered` event (`--agent` real ID, `--provider`, `--profile`,
+   `--task`; optional `--parent`), which is distinct from `turn`. Profile names such as
    `architect`, `engineer`, or `reviewer` are metadata, never substitute IDs.
 4. Attribute decisions, results, validation, and reviews to their real producers
    in every state. When active, publish those records as checkpoints and require
    the principal to verify their publication and visibility in Odradek. When
    declined/unavailable, retain normal host evidence and make no publication or
    visibility claim.
-5. Before closure, verify the architect's original or amended task plan, the
+5. Before closure, follow the closure checklist above and verify the architect's original or amended task plan, the
    complete routing-evidence justification above, required assignments and terminal
    results, and acceptance/review evidence. When active, also verify the observable
    session and its terminal closure. Missing routing justification or other
@@ -147,3 +291,9 @@ The writer records supplied events; it does not independently authenticate host
 creation or enforce routing. Verify actual host creation records and report
 missing evidence as a blocker. Never claim a technical gate passed without an
 implemented check and its actual result.
+
+Limits: no file or rule can force Cursor/Claude/Codex to read this contract first;
+`alwaysApply` rules and entry points only make it likely. `agent_registered` and
+`observatory:verify` check format, placeholders, and what the API shows; they
+cannot prove an ID was truly issued by the host or that work was done by that
+agent. A skipped check is NO EJECUTADA, never PASÓ.

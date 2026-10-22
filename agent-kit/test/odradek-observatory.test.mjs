@@ -6,12 +6,15 @@ test("builds the public projects endpoint", () => {
   assert.equal(projectsUrl("http://127.0.0.1:8090/"), "http://127.0.0.1:8090/api/projects");
 });
 
-test("reports healthy, not active, for a successful projects response", async () => {
+test("a healthy response without instance proof is never healthy_own", async () => {
   const result = await checkObservatory({
     baseUrl: "http://example.test",
+    probe: false,
     fetchImpl: async () => ({ ok: true, json: async () => [] }),
   });
-  assert.deepEqual(result, { service: "healthy", url: "http://example.test/api/projects" });
+  assert.equal(result.service, "healthy_unknown");
+  assert.equal(result.url, "http://example.test/api/projects");
+  assert.equal(result.reason, "instance_unknown");
 });
 
 test("reports unavailable for failed and malformed responses", async () => {
@@ -49,4 +52,13 @@ test("reports a deterministic timeout", async () => {
   });
   assert.equal(result.service, "unavailable");
   assert.equal(result.reason, "timeout");
+});
+
+test("a default (unconfigured) URL requires setup instead of assuming 8090", async () => {
+  const result = await checkObservatory({
+    baseUrl: "http://127.0.0.1:8090", urlSource: "default",
+    fetchImpl: async () => { throw new Error("must not be called"); },
+  });
+  assert.equal(result.service, "unavailable");
+  assert.equal(result.reason, "setup_required");
 });

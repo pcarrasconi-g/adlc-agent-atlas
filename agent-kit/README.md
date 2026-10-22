@@ -14,7 +14,10 @@ The kit has no provider SDK, no hooks, and no vendor credentials.
 Run the writer from the repository root:
 
 ```bash
-node agent-kit/scripts/odradek-event.mjs init --session my-task --goal "Short goal"
+: "${ODRADEK_PRINCIPAL_ID:?set the real host-issued principal ID}"
+node agent-kit/scripts/odradek-event.mjs init --session my-task --goal "Short goal" \
+  --principal "$ODRADEK_PRINCIPAL_ID" --provider codex \
+  --identity-source host-issued
 ```
 
 The output is local-only under `agent-kit/output/sessions/`. The Odradek

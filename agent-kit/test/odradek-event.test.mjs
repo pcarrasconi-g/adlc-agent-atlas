@@ -6,6 +6,11 @@ import test from "node:test";
 import { runWriter } from "../scripts/odradek-event.mjs";
 
 const quiet = { log() {} };
+const identity = [
+  "--principal", "6eb10d1e-0000-4000-8000-000000000001",
+  "--provider", "codex",
+  "--identity-source", "host-issued",
+];
 
 test("init persists the candidate session and real principal metadata", async (t) => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "odradek-event-"));
@@ -40,7 +45,7 @@ test("a second init fails without erasing an existing transcript", async (t) => 
   const output = path.join(directory, "existing.json");
   const base = ["--session", "existing-session", "--out", output];
 
-  await runWriter(["init", ...base, "--goal", "Original"], quiet);
+  await runWriter(["init", ...base, "--goal", "Original", ...identity], quiet);
   await runWriter(["turn", ...base,
     "--agent", "host-agent-1", "--summary", "Work preserved"], quiet);
   const before = await readFile(output, "utf8");
@@ -65,7 +70,7 @@ test("init redacts secrets from all textual metadata", async (t) => {
     "--mode", `multi token=${secret}`,
     "--principal", `principal token=${secret}`,
     "--provider", `codex token=${secret}`,
-    "--identity-source", `host-issued token=${secret}`,
+    "--identity-source", "host-issued",
   ], quiet);
 
   const persisted = await readFile(output, "utf8");
@@ -77,7 +82,7 @@ test("init redacts secrets from all textual metadata", async (t) => {
   assert.deepEqual(session.principal, {
     agentId: "principal token=[REDACTED]",
     provider: "codex token=[REDACTED]",
-    identitySource: "host-issued token=[REDACTED]",
+    identitySource: "host-issued",
   });
 });
 
@@ -89,7 +94,7 @@ test("turn and close redact secrets from all argument-controlled text", async (t
   const tagged = (prefix) => `${prefix} token=${secret}`;
   const base = ["--session", "turn-redacted-session", "--out", output];
 
-  await runWriter(["init", ...base], quiet);
+  await runWriter(["init", ...base, ...identity], quiet);
   await runWriter(["turn", ...base,
     "--run-id", tagged("run"),
     "--agent", tagged("agent"),
@@ -121,4 +126,16 @@ test("turn and close redact secrets from all argument-controlled text", async (t
     source: "explicit",
     confidence: 1,
   }]);
+});
+
+test("init requires a real principal, provider, and exact host-issued identity source", async (t) => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "odradek-event-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const base = ["--session", "required-init", "--out", path.join(directory, "required.json")];
+
+  await assert.rejects(runWriter(["init", ...base], quiet), /--principal/);
+  await assert.rejects(runWriter(["init", ...base, "--principal", identity[1]], quiet), /--provider/);
+  await assert.rejects(runWriter(["init", ...base, "--principal", identity[1], "--provider", "codex"], quiet), /--identity-source/);
+  await assert.rejects(runWriter(["init", ...base, "--principal", identity[1], "--provider", "codex", "--identity-source", "claimed"], quiet), /exactamente "host-issued"/);
+  await assert.rejects(runWriter(["init", ...base, "--principal", "architect", "--provider", "codex", "--identity-source", "host-issued"], quiet), /perfil/);
 });

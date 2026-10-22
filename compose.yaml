@@ -1,3 +1,4 @@
+name: odradek-${ODRADEK_INSTANCE:-local}
 services:
   web:
     build: ./observatory/frontend

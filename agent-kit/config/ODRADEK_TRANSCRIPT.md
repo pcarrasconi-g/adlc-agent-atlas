@@ -54,22 +54,26 @@ with the writer included in this kit. The AI host only needs to run these local
 commands at meaningful stages:
 
 ```bash
+: "${ODRADEK_PRINCIPAL_ID:?set the real host-issued principal ID}"
+: "${ODRADEK_ARCHITECT_ID:?set the real host-issued architect ID}"
+
 node scripts/odradek-event.mjs init --session checkout-catalog --goal "Objective" \
-  --mode multi --principal host-agent-principal-id \
+  --mode multi --principal "$ODRADEK_PRINCIPAL_ID" \
   --provider codex --identity-source host-issued
+node scripts/odradek-event.mjs agent_registered --session checkout-catalog \
+  --agent "$ODRADEK_ARCHITECT_ID" --provider codex \
+  --profile architect --task "Plan the objective"
 node scripts/odradek-event.mjs turn --session checkout-catalog \
-  --agent host-agent-principal-id --status continue --summary "Delegation prepared"
-node scripts/odradek-event.mjs turn --session checkout-catalog \
-  --agent host-agent-actual-id --status done --summary "Architecture ready" \
-  --from host-agent-principal-id --to host-agent-actual-id --relation delegation
+  --agent "$ODRADEK_ARCHITECT_ID" --parent "$ODRADEK_PRINCIPAL_ID" \
+  --status done --summary "Architecture ready"
 node scripts/odradek-event.mjs close --session checkout-catalog --kind done
 ```
 
-Replace illustrative IDs with actual host-returned identities. These commands
+Export actual host-returned identities before running the example. These commands
 record events; they never create agents. The writer writes atomically, locks
 concurrent turns, and redacts common secret patterns before persistence. `init`
-creates a session once and persists optional backward-compatible `--mode`,
-`--principal`, `--provider`, and `--identity-source` metadata. A second `init`
+creates a session once, requires `--principal`, `--provider`, and
+`--identity-source host-issued`, and persists optional `--mode` metadata. A second `init`
 fails without modifying the existing transcript; there is no reset flag.
 
 ## Universal orchestrator instruction

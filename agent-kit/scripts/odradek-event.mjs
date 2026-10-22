@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { mkdir, open, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, open, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -9,6 +9,38 @@ const redact = (value) => String(value ?? "")
   .replace(/((?:api[_-]?key|token|password|secret)\s*[:=]\s*)[^\s,;]+/gi, "$1[REDACTED]")
   .replace(/(?:sk-[A-Za-z0-9_-]{16,})/g, "[REDACTED]")
   .replace(/(Bearer\s+)[A-Za-z0-9._-]+/gi, "$1[REDACTED]");
+
+const BUILTIN_PROFILES = ["product-analyst", "architect", "devops", "engineer", "reviewer", "supervisor", "principal", "qa", "ux"];
+const PLACEHOLDER_ID = /^(placeholder|todo|tbd|unknown|none|null|undefined|example|test|xxx+|n\/a|agent|subagent)$|^<.*>$|^host[-_ ]?(principal|architect|agent|subagent)?[-_ ]?id$|^host_/i;
+
+/** Profile keys under `agents:` in config/agents.yaml (the source of truth). */
+export async function profilesFromYaml(file = path.join(root, "config", "agents.yaml")) {
+  const names = new Set();
+  let inAgents = false;
+  for (const line of (await readFile(file, "utf8")).split(/\r?\n/)) {
+    if (/^agents:\s*$/.test(line)) { inAgents = true; continue; }
+    if (inAgents && /^\S/.test(line) && !line.startsWith("#")) break;
+    const match = inAgents && line.match(/^ {2}([A-Za-z0-9_-]+):\s*$/);
+    if (match) names.add(match[1]);
+  }
+  if (!names.size) throw new Error(`No se encontraron perfiles en ${file}`);
+  return names;
+}
+
+// Names that are never valid IDs: profiles from agents.yaml plus generic role words.
+async function knownProfiles() {
+  return new Set([...BUILTIN_PROFILES, ...(await profilesFromYaml())]);
+}
+
+/** Rejects IDs that are visibly not host-issued. It cannot prove an ID is real. */
+export function assertRealAgentId(id, { profiles = new Set(BUILTIN_PROFILES), session, label = "ID" } = {}) {
+  const value = String(id ?? "").trim();
+  if (!value || value === "true") throw new Error(`${label} requerido: debe ser el ID emitido por el host`);
+  if (PLACEHOLDER_ID.test(value)) throw new Error(`${label} "${value}" es un placeholder, no un ID emitido por el host`);
+  if (profiles.has(value.toLowerCase())) throw new Error(`${label} "${value}" es un nombre de perfil, no un ID emitido por el host`);
+  if (session && value === session) throw new Error(`${label} no puede derivarse del nombre de sesión`);
+  return value;
+}
 
 function argsOf(argv) {
   const out = {};
@@ -68,6 +100,13 @@ export async function runWriter(argv, { log = console.log } = {}) {
   try {
     if (command === "init") {
       await assertNewSession(file);
+      for (const key of ["principal", "provider", "identitySource"]) {
+        if (!options[key] || options[key] === true) throw new Error(`--${key.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)} es obligatorio para init`);
+      }
+      if (options.identitySource !== "host-issued") {
+        throw new Error('--identity-source debe ser exactamente "host-issued"');
+      }
+      assertRealAgentId(options.principal, { profiles: await knownProfiles(), session, label: "--principal" });
       const transcript = {
         kind: "working",
         goal: redact(options.goal || "Sesión Odradek"),
@@ -75,13 +114,11 @@ export async function runWriter(argv, { log = console.log } = {}) {
         transcript: [],
       };
       if (options.mode) transcript.mode = redact(options.mode);
-      if (options.principal) {
-        transcript.principal = {
-          agentId: redact(options.principal),
-          ...(options.provider ? { provider: redact(options.provider) } : {}),
-          ...(options.identitySource ? { identitySource: redact(options.identitySource) } : {}),
-        };
-      }
+      transcript.principal = {
+        agentId: redact(options.principal),
+        provider: redact(options.provider),
+        identitySource: "host-issued",
+      };
       await writeTranscript(file, transcript);
       log(file);
       return;
@@ -92,6 +129,37 @@ export async function runWriter(argv, { log = console.log } = {}) {
 
     if (command === "close") {
       transcript.kind = redact(options.kind || "done");
+    } else if (command === "agent_registered") {
+      const profiles = await knownProfiles();
+      const agentId = redact(assertRealAgentId(options.agent, { profiles, session, label: "--agent" }));
+      for (const key of ["provider", "profile", "task"]) {
+        if (!options[key] || options[key] === true) throw new Error(`--${key} es obligatorio para agent_registered`);
+      }
+      const yamlProfiles = await profilesFromYaml();
+      if (!yamlProfiles.has(String(options.profile))) {
+        throw new Error(`--profile "${options.profile}" no es un perfil conocido de agents.yaml (válidos: ${[...yamlProfiles].join(", ")})`);
+      }
+      const summary = redact(`Registro de agente ${options.profile}: ${options.task}`);
+      const event = {
+        runId: redact(options.runId || `${agentId}-registered-${Date.now()}`),
+        round: transcript.transcript.length + 1,
+        agentId,
+        at: new Date().toISOString(),
+        rawText: summary,
+        parsed: {
+          status: "registered",
+          summary,
+          event: "agent_registered",
+          provider: redact(options.provider),
+          profile: redact(options.profile),
+          task: redact(options.task),
+        },
+      };
+      const parent = options.parent || transcript.principal?.agentId;
+      if (parent && parent !== true) {
+        event.parentAgentId = redact(assertRealAgentId(parent, { profiles, session, label: "--parent" }));
+      }
+      transcript.transcript.push(event);
     } else if (command === "turn") {
       const agentId = redact(options.agent || "unknown");
       const summary = redact(options.summary || options.raw || "Turno de agente");
@@ -116,7 +184,7 @@ export async function runWriter(argv, { log = console.log } = {}) {
       }
       transcript.transcript.push(event);
     } else {
-      log("Uso: odradek-event init|turn|close --session nombre [opciones]");
+      log("Uso: odradek-event init|agent_registered|turn|close --session nombre [opciones]");
       return;
     }
     await writeTranscript(file, transcript);

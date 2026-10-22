@@ -36,3 +36,14 @@ test("accepts an isolated explicit Odradek session file", async () => {
   assert.equal(got.events[0].relations?.[0].kind,"delegation");
   assert.doesNotMatch(JSON.stringify(got.events),/not-for-storage/);
 });
+
+test("turns an agent_registered parent signal into one delegation edge", async () => {
+  const dir=await mkdtemp(path.join(tmpdir(),"aw-")); const file=path.join(dir,"registration.json");
+  await writeFile(file,JSON.stringify({kind:"working",goal:"registration",transcript:[
+    {runId:"registration-r1",round:1,agentId:"host-agent-id",parentAgentId:"host-principal-id",parsed:{event:"agent_registered",status:"registered",profile:"engineer"}}
+  ]}));
+  const got=await agentTeamEvents(file);
+  assert.deepEqual(got.relations.map((relation) => `${relation.source}->${relation.target}:${relation.kind}`),[
+    "host-principal-id->host-agent-id:delegation"
+  ]);
+});

@@ -14,6 +14,8 @@
     "start": "node --import tsx src/cli.ts",
     "run:goal": "node --import tsx src/cli.ts run",
     "observatory:check": "node scripts/odradek-observatory.mjs",
+    "observatory:verify": "node scripts/odradek-verify.mjs",
+    "observatory:setup": "node scripts/odradek-setup.mjs",
     "test": "node --test test/*.test.mjs",
     "typecheck": "tsc --noEmit"
   },

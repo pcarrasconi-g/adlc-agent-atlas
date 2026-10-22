@@ -11,7 +11,17 @@ relationships, retention, and data minimization under the developer's control.
 1. Work in a separate product repository.
 2. Copy the host-appropriate template from `templates/` into the product
    repository, or add its contents to the first task prompt.
-3. Before creating an architect, check the observatory once with
+3. Instance ownership: `observatory:check` writes and removes a probe transcript to
+   prove the service sees this checkout. `healthy_own` may proceed; `healthy_foreign`
+   or `healthy_unknown` (exit != 0, `foreign_instance`) never enter `starting`/`active`:
+   ask the user once (other port for this copy with consent, other URL via
+   `--base-url`/`ODRADEK_BASE_URL`, or continue without it as `declined`). Each checkout has its
+   own `ODRADEK_PORT` and `ODRADEK_INSTANCE` in its unversioned `.env`; the preflight
+   queries only that URL (never shared, never assumed 8090, never another
+   instance's port). If missing (`setup_required`), run
+   `npm --prefix <ODRADEK_ROOT>/agent-kit run observatory:setup` (edits `.env` only;
+   starting Docker still requires consent unless already given for the task).
+   Before creating an architect, check the observatory once with
    `npm --prefix <ODRADEK_ROOT>/agent-kit run observatory:check`. A `healthy`
    response is only a candidate: enter `starting`, create a candidate session ID
    in memory, and issue only atomic `init`. No other event or claim is allowed
@@ -40,8 +50,20 @@ relationships, retention, and data minimization under the developer's control.
    checkpoint, result, handoff, review, and closure. Verify that this evidence
    can be inspected. Never publish secrets, sensitive payloads, private prompts,
    or chain-of-thought.
-8. Close only after the architect's required plan results and acceptance evidence exist;
+8. Register each real agent with the writer `agent_registered` event (real ID,
+   provider, Odradek profile, task); host subagent types map to profiles per AGENTS.md.
+9. Before closing, run `observatory:verify --session <ID>`. The writer's printed
+   path is not visibility evidence. If verify was not run, report NO EJECUTADA and
+   do not close as done. Closure verify never uses `--no-close`. If it fails with a
+   healthy service, retry once, diagnose without restarting, ask the user before
+   recreating the container, report "FALLÓ: observabilidad no verificada", and do
+   not mark done or fall back to `unavailable` (see AGENTS.md).
+10. Close only after the architect's required plan results and acceptance evidence exist;
    otherwise report blocked or failed. Follow [AGENTS.md](../AGENTS.md).
+
+Hard rule: read the contract and run preflight before any read or work in the
+user's repository. Preflight happens once per task; see AGENTS.md for new task
+vs continuation and host-issued ID definitions.
 
 ## What to record
 
