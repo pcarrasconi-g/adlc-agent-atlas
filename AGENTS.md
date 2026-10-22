@@ -5,6 +5,44 @@ Codex, Cursor, Claude, or another host creates and coordinates real subagents.
 Odradek observes explicit events; it does not launch agents or require provider
 APIs, SDKs, or CLI adapters.
 
+## Mandatory observatory preflight (before architect routing)
+
+At the beginning of each task, before creating the architect or doing substantive
+work, check the local observatory once. Use
+`npm --prefix <ODRADEK_ROOT>/agent-kit run observatory:check` (or equivalently
+check the configured public `/api/projects` endpoint). Keep exactly one
+task-scoped observability state, including the transient `starting` state:
+
+- A successful health check means the service is `healthy`, not yet that task
+  observability is `active`. Do not ask the user. Set `starting`, generate a
+  candidate session ID in host memory, and submit exactly the atomic writer
+  `init` containing the goal, mode, and real principal identity. `starting` does
+  not permit any other event or observability claim.
+- If atomic `init` succeeds, keep the candidate ID, transition to `active`, and
+  then create the architect.
+- If the health check succeeds but writer initialization fails, set
+  `unavailable`, report the cause, stop publishing, and continue with real agents
+  and normal host evidence. Do not claim `active` and do not start or restart
+  Docker automatically; request a user decision only if the contract requires a
+  recovery choice.
+- If the check does not succeed, ask the user **once** whether to start the local
+  observatory or continue with agents without it. Never run Docker or another
+  startup command before explicit consent.
+- `declined`: the user chooses to continue without it. Continue the complete
+  architect-first agent workflow, but do not write events or claim the task is
+  observable.
+- `unavailable`: the user consented but startup or the repeated check failed, or
+  the environment cannot run/check the observatory. Explain the failure and
+  continue the complete agent workflow without claiming observability, unless
+  observability itself is an acceptance requirement.
+
+Do not ask again during the same task. A continuation inside the approved scope
+inherits its terminal state; `starting` must resolve to `active` or `unavailable`
+before agent creation. A materially new task runs a new preflight. When `active`,
+record every real agent registration, delegation, meaningful checkpoint, result,
+and session closure. Store concise facts and evidence paths only: never secrets,
+credentials, private prompts, sensitive payloads, or chain-of-thought.
+
 ## Mandatory once-per-task architect routing
 
 Every task must go first to a real architect subagent. This includes questions,
@@ -55,35 +93,50 @@ never evidence of review.
 
 ## Principal boundary
 
-The principal reads the contract, opens the session, launches the architect and
-the minimum set of agents in its plan, relays context, records and verifies events,
-collects results, integrates approved delivery, and communicates with the user. It
-must not perform
-substantive investigation, design, implementation, testing, or review on its own.
+The principal reads the contract, launches the architect and the minimum set of
+agents in its plan, relays context, collects results, integrates approved delivery,
+and communicates with the user. When observability is `active`, it also opens the
+Odradek session and records and verifies events. When it is `declined` or
+`unavailable`, it coordinates through real host-issued IDs and preserves normal
+host evidence without claiming publication or visibility in Odradek. It must not
+perform substantive investigation, design, implementation, testing, or review on
+its own.
 Integration applies approved results; fixes or conflict resolutions requiring
 technical judgment return to the assigned agents.
 
-If delegation or a required real identity is unavailable, record and report a
-blocker. Never silently fall back to solo execution or fabricate an instance.
+If delegation or a required real identity is unavailable, preserve the blocker in
+the active Odradek session or, when declined/unavailable, in normal host evidence,
+and report it. Never silently fall back to solo execution or fabricate an instance.
 Historical single-node sessions remain evidence, not authorization for new solo work.
 
 ## Identity and evidence
 
-1. Start Odradek and initialize a session before substantive work. Register the
-   principal with its actual host-issued ID and identity source.
-2. Create the architect, then record its returned ID, host, profile, task, and
-   delegation. Capture its routing decision before launching assigned agents,
-   including the required routing-evidence justification.
-3. Register additional agents only after real creation. Profile names such as
+1. After a healthy service check, enter `starting`, generate a candidate session
+   ID in memory, and atomically initialize it with the principal's actual
+   host-issued ID and identity source. Do not publish other events in `starting`.
+   Set `active` only after the writer accepts initialization. If it fails, set
+   `unavailable`, report the cause, stop publication, and retain normal host
+   evidence without weakening agent routing. Preserve any failed/partial file
+   only as technical failure evidence; it is never an observable session.
+2. Create the architect and capture its returned ID, host, profile, task,
+   delegation, and routing decision before launching assigned agents, including
+   the required routing-evidence justification. Publish these facts to Odradek
+   only when observability is `active`; otherwise retain them as normal host
+   evidence.
+3. Create additional agents before using their real identities. When active,
+   register them in Odradek only after real creation. Profile names such as
    `architect`, `engineer`, or `reviewer` are metadata, never substitute IDs.
-4. Record decisions, results, validation, and reviews under their real producers.
-   Subagents may publish checkpoints; the principal remains responsible for
-   verifying publication and visibility in Odradek.
+4. Attribute decisions, results, validation, and reviews to their real producers
+   in every state. When active, publish those records as checkpoints and require
+   the principal to verify their publication and visibility in Odradek. When
+   declined/unavailable, retain normal host evidence and make no publication or
+   visibility claim.
 5. Before closure, verify the architect's original or amended task plan, the
    complete routing-evidence justification above, required assignments and terminal
-   results, acceptance/review evidence, and the observable session. Missing routing
-   justification or other required evidence blocks acceptance, commit, and
-   deployment. Preserve failures.
+   results, and acceptance/review evidence. When active, also verify the observable
+   session and its terminal closure. Missing routing justification or other
+   required evidence blocks acceptance, commit, and deployment. Preserve failures
+   in Odradek when active and in normal host evidence otherwise.
 6. Never include secrets, credentials, sensitive data, or full private prompts.
 
 ## Enforcement boundary

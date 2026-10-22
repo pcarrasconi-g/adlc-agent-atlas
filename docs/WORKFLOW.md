@@ -8,11 +8,24 @@ relationships, retention, and data minimization under the developer's control.
 
 ## Developer flow
 
-1. Start Odradek with `docker compose up -d` from this repository.
-2. Work in a separate product repository.
-3. Copy the host-appropriate template from `templates/` into the product
+1. Work in a separate product repository.
+2. Copy the host-appropriate template from `templates/` into the product
    repository, or add its contents to the first task prompt.
-4. Create a unique session ID before delegating work.
+3. Before creating an architect, check the observatory once with
+   `npm --prefix <ODRADEK_ROOT>/agent-kit run observatory:check`. A `healthy`
+   response is only a candidate: enter `starting`, create a candidate session ID
+   in memory, and issue only atomic `init`. No other event or claim is allowed
+   until the writer accepts it and the state becomes `active`. If init fails, set
+   `unavailable`, preserve any partial artifact only as a technical failure,
+   report it, publish nothing further, and never restart Docker automatically.
+   If the service is down, ask once whether the
+   user wants to run `docker compose up -d --build` from Odradek or continue
+   without visualization. Never start it without explicit consent. Keep the
+   resulting `active`, `declined`, or `unavailable` state after `starting` resolves.
+4. When active, retain and use the exact candidate session ID and principal
+   registration accepted by `init`; never generate or initialize a second one.
+   When declined or unavailable, continue without publishing or claiming
+   observability.
 5. Launch a real architect once per task, not per delivery phase, including
    questions, reviews, and tiny fixes. Record its returned identity and end-to-end
    plan before execution.
@@ -23,8 +36,10 @@ relationships, retention, and data minimization under the developer's control.
    review, a risk boundary, or a real parallel benefit. The principal only
    coordinates and integrates approved delivery. Missing delegation blocks work;
    it never permits solo work.
-7. Record and verify meaningful delegation, handoff, waiting, result, and review
-   events. Start the viewer and verify that this evidence can be inspected.
+7. When active, record and verify every real agent, delegation, meaningful
+   checkpoint, result, handoff, review, and closure. Verify that this evidence
+   can be inspected. Never publish secrets, sensitive payloads, private prompts,
+   or chain-of-thought.
 8. Close only after the architect's required plan results and acceptance evidence exist;
    otherwise report blocked or failed. Follow [AGENTS.md](../AGENTS.md).
 
@@ -43,3 +58,5 @@ is responsible for data minimization.
 - It does not inspect private chat databases or vendor folders.
 - It does not infer that two nearby events belong to the same work item.
 - It does not replace an AI host's permission model.
+- It does not require visualization for agent execution; opting out affects
+  evidence publication, not architect-first routing or QA.

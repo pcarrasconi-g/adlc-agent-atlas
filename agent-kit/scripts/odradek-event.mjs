@@ -40,6 +40,15 @@ async function readTranscript(file) {
   catch { return { kind: "working", goal: "Sesión Odradek", transcript: [] }; }
 }
 
+async function assertNewSession(file) {
+  try {
+    await readFile(file, "utf8");
+    throw new Error(`La sesión ya existe y no se reinicializó: ${file}`);
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
+}
+
 async function writeTranscript(file, value) {
   await mkdir(path.dirname(file), { recursive: true });
   const temp = `${file}.${process.pid}.tmp`;
@@ -47,8 +56,8 @@ async function writeTranscript(file, value) {
   await rename(temp, file);
 }
 
-async function main() {
-  const [command = "help", ...rest] = process.argv.slice(2);
+export async function runWriter(argv, { log = console.log } = {}) {
+  const [command = "help", ...rest] = argv;
   const options = argsOf(rest);
   const session = options.session && String(options.session);
   if (!options.out && (!session || !/^[A-Za-z0-9_-]{1,80}$/.test(session))) {
@@ -57,48 +66,69 @@ async function main() {
   const file = path.resolve(String(options.out || process.env.ODRADEK_TRANSCRIPT_PATH || path.join(sessionsDir, `${session}.json`)));
   const release = await lockFile(file);
   try {
+    if (command === "init") {
+      await assertNewSession(file);
+      const transcript = {
+        kind: "working",
+        goal: redact(options.goal || "Sesión Odradek"),
+        sessionId: redact(session),
+        transcript: [],
+      };
+      if (options.mode) transcript.mode = redact(options.mode);
+      if (options.principal) {
+        transcript.principal = {
+          agentId: redact(options.principal),
+          ...(options.provider ? { provider: redact(options.provider) } : {}),
+          ...(options.identitySource ? { identitySource: redact(options.identitySource) } : {}),
+        };
+      }
+      await writeTranscript(file, transcript);
+      log(file);
+      return;
+    }
+
     const transcript = await readTranscript(file);
     if (!Array.isArray(transcript.transcript)) transcript.transcript = [];
 
-    if (command === "init") {
-      transcript.kind = "working";
-      transcript.goal = redact(options.goal || transcript.goal || "Sesión Odradek");
-      transcript.sessionId = session || transcript.sessionId;
-      transcript.transcript = [];
-    } else if (command === "close") {
-      transcript.kind = String(options.kind || "done");
+    if (command === "close") {
+      transcript.kind = redact(options.kind || "done");
     } else if (command === "turn") {
-      const agentId = String(options.agent || "unknown");
+      const agentId = redact(options.agent || "unknown");
       const summary = redact(options.summary || options.raw || "Turno de agente");
-      const status = String(options.status || "continue");
+      const status = redact(options.status || "continue");
       const event = {
-        runId: String(options.runId || `${agentId}-${Date.now()}`),
+        runId: redact(options.runId || `${agentId}-${Date.now()}`),
         round: transcript.transcript.length + 1,
         agentId,
         at: new Date().toISOString(),
         rawText: redact(options.raw || summary),
         parsed: { status, summary },
       };
-      if (options.parent) event.parentAgentId = String(options.parent);
+      if (options.parent) event.parentAgentId = redact(options.parent);
       if (options.from && options.to) {
         event.relations = [{
-          from: String(options.from),
-          to: String(options.to),
-          kind: String(options.relation || "message"),
+          from: redact(options.from),
+          to: redact(options.to),
+          kind: redact(options.relation || "message"),
           source: "explicit",
           confidence: 1,
         }];
       }
       transcript.transcript.push(event);
     } else {
-      console.log("Uso: odradek-event init|turn|close --session nombre [opciones]");
+      log("Uso: odradek-event init|turn|close --session nombre [opciones]");
       return;
     }
     await writeTranscript(file, transcript);
-    console.log(file);
+    log(file);
   } finally {
     await release();
   }
 }
 
-main().catch((error) => { console.error(error.message); process.exit(1); });
+if (import.meta.url === `file://${process.argv[1]}`) {
+  runWriter(process.argv.slice(2)).catch((error) => {
+    console.error(error.message);
+    process.exit(1);
+  });
+}

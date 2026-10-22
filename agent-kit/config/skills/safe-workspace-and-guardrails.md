@@ -11,6 +11,8 @@ Use before any agent edits a workspace, executes commands, installs dependencies
 changes infrastructure, or touches data that could be sensitive. It applies to a
 principal's coordination actions and every real subagent's assigned execution.
 Every new task follows the architect-first contract in root `AGENTS.md`.
+Its observatory preflight occurs first; checking is read-only, and starting
+Docker always requires the user's explicit consent when the viewer is down.
 
 Do not use this skill to invent access, bypass a sandbox, or replace a project's
 own security policy.
@@ -24,7 +26,9 @@ Odradek records **executions**, not job titles.
 2. Before a subagent acts, the orchestrator must create it with the host and
    capture its real runtime identifier, provider, assigned task, and parent
    identifier.
-3. Publish that real identity to Odradek before its first checkpoint.
+3. Real identity is mandatory for coordination in every observability state.
+   Publish it to Odradek before its first checkpoint only when the task state is
+   `active`; in `declined` or `unavailable`, do not publish identity or events.
 4. Never create synthetic nodes. Missing required architect or specialist
    delegation blocks new work; historical single-node records stay historical.
 5. A role may be mentioned in a task description, but it must never be emitted as
@@ -62,8 +66,10 @@ Produce a concise safety record containing:
 - validations executed and their results;
 - blocked or deferred external actions.
 
-Publish this record as an Odradek checkpoint for the agent that actually performed
-the work. It must not attribute work to a nonexistent role.
+When task observability is active, publish this record as an Odradek checkpoint
+for the agent that actually performed the work. When declined or unavailable,
+retain it in the normal result without claiming publication. It must not
+attribute work to a nonexistent role.
 
 ## Safety
 

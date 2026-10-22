@@ -44,28 +44,38 @@ instance identity is available, report a blocker; never generate a substitute.
 
 ## Procedure
 
-1. Read the objective, acceptance criteria, safety limits, and the relevant
+1. Run the observatory preflight from root `AGENTS.md` before creating any
+   agent. A healthy response is only a candidate: enter `starting`, create an
+   in-memory candidate ID, and issue only atomic `init`; no other event or claim
+   is allowed. Set `active` only after the writer accepts it. If init fails, set `unavailable`,
+   report the cause, publish nothing further, and do not restart Docker
+   automatically. If declined or unavailable, continue this procedure without
+   emitting events or claiming observability; the choice never permits solo execution.
+2. Read the objective, acceptance criteria, safety limits, and the relevant
    role profiles/skills.
-2. Use `multi` mode: every task requires the principal and a real architect.
-3. Initialize one Odradek session for the iteration. Register the real
-   principal instance ID and provider.
-4. Create the real architect first and record its one task plan. It assigns the
+3. Use `multi` mode: every task requires the principal and a real architect.
+4. Reuse the outcome of step 1; do not issue a second `init`. When step 1
+   transitions `starting` to `active`, promote and retain that same candidate
+   session ID and its principal metadata for all later publications. Otherwise
+   use normal host evidence.
+5. Create the real architect first and, when active, record its one task plan. It assigns the
    minimum sufficient ownership, dependencies, skills, acceptance criteria,
    reviewers, integration/commit, and deployment when applicable. It may answer
    architecture-only tasks; other work goes to real assigned specialists.
-5. Create each child in the host. Only after successful creation, register its
+6. Create each child in the host. Only after successful creation and when active, register its
    returned real ID and emit the delegation from the real principal ID to that
    real child ID.
-6. Record meaningful checkpoints under the instance that produced them:
+7. When active, record meaningful checkpoints under the instance that produced them:
    decision, implementation, test result, block, handoff, or escalation.
-7. Reuse the approved plan and assigned instances across sequential phases. Do
+8. Reuse the approved plan and assigned instances across sequential phases. Do
    not create a phase-specific duplicate agent unless the architect updates the
    plan for a material scope change, independent expertise or review, a risk
    boundary, or a real parallel benefit.
-8. Collect results in the principal. Return technical conflicts to the architect
+9. Collect results in the principal. Return technical conflicts to the architect
    and assigned agents; the principal does not implement, test, or self-review.
-9. Close only after required checks and the Odradek identity/observability
-   gate pass. Preserve a blocked or error session when work cannot close.
+10. Close only after required checks pass. When active, also require the Odradek
+   identity/observability gate and publish the terminal result and closure.
+   Preserve a blocked or error session when work cannot close.
 
 ## Required evidence
 
