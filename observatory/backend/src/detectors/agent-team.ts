@@ -1,8 +1,8 @@
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
-import { cleanEvent, cleanRelation, type EventV1, type RelationV1 } from "../lib/events.js";
+import { cleanEvent, cleanRelation, type AgentV1, type EventV1, type RelationV1 } from "../lib/events.js";
 
-export type AgentTeamSession = { key:string; title:string; status:string; events:EventV1[]; relations:RelationV1[] };
+export type AgentTeamSession = { key:string; canonicalKey:boolean; title:string; status:string; events:EventV1[]; relations:RelationV1[] };
 type RawEntry = { agentId?: unknown; parsed?: Record<string, unknown>; relations?: unknown; parentAgentId?: unknown; parent?: unknown };
 const text = (value: unknown): string | undefined => typeof value === "string" && value.trim() ? value.trim() : undefined;
 
@@ -66,10 +66,22 @@ export async function agentTeamEvents(file: string): Promise<AgentTeamSession> {
   const info=await stat(file); if (info.size > 5_000_000) throw new Error("Transcript exceeds 5 MB limit");
   const data=JSON.parse(await readFile(file,"utf8"));
   const transcript=Array.isArray(data.transcript)?data.transcript:[];
-  const key=String(transcript[0]?.runId || `${info.mtimeMs}:${info.size}`);
-  const events=transcript.map((entry: RawEntry,index:number)=>{
-    const relations = collectRelations(entry,index);
-    return cleanEvent({externalKey:`${key}:${index}`,sequence:index,type:"agent.turn",agent:{key:String(entry.agentId||"unknown"),name:String(entry.agentId||"Unknown")},status:entry.parsed?.status || "unknown",occurredAt:(entry as any).at,summary:entry.parsed?.summary,content:(entry as any).rawText,payload:{round:(entry as any).round,parsed:entry.parsed},relations});
-  });
-  return {key,title:String(data.goal || "agent-team session"),status:String(data.kind || "unknown"),events,relations:events.flatMap((event: EventV1) => event.relations || [])};
+  const sessionId=text(data.sessionId);
+  const key=String(sessionId || transcript[0]?.runId || `legacy:${path.basename(file)}`);
+  const metadata = new Map<string,AgentV1>();
+  const principalId=text(data.principal?.agentId);
+  if (principalId) metadata.set(principalId,{key:principalId,name:text(data.principal?.displayName)||"Principal",displayName:text(data.principal?.displayName)||"Principal",role:"Principal",profile:text(data.principal?.profile)||"principal",provider:text(data.principal?.provider),task:text(data.principal?.task)||text(data.goal),configuredModel:text(data.principal?.configuredModel),declaredSkills:Array.isArray(data.principal?.declaredSkills)?data.principal.declaredSkills.filter((x:unknown)=>typeof x==="string"):[],evidenceLevel:data.principal?.identitySource==="host-issued"?"host-recorded":"unverifiable",isPrincipal:true});
+  for (const entry of transcript) {
+    const id=text(entry.agentId); const parsed=entry.parsed||{}; if (!id) continue;
+    if (text(parsed.event)==="agent_registered" || text(parsed.profile)) { const level=text(parsed.evidenceLevel); metadata.set(id,{key:id,name:text(parsed.displayName)||text(parsed.profile)||id,displayName:text(parsed.displayName)||text(parsed.profile)||id,role:text(parsed.displayName)||text(parsed.profile),profile:text(parsed.profile),provider:text(parsed.provider),task:text(parsed.task),configuredModel:text(parsed.configuredModel),declaredSkills:Array.isArray(parsed.declaredSkills)?parsed.declaredSkills.filter((x:unknown)=>typeof x==="string"):[],evidenceLevel:level==="declared"||level==="host-recorded"||level==="behavior-evidenced"||level==="unverifiable"?level:"unverifiable"}); }
+  }
+  const offset=principalId?1:0;
+  const events:EventV1[]=[];
+  if (principalId) events.push(cleanEvent({externalKey:`${key}:principal`,sequence:0,type:"session.principal",agent:metadata.get(principalId),status:"registered",summary:"Principal de la sesión",payload:{identitySource:data.principal?.identitySource}}));
+  events.push(...transcript.map((entry: RawEntry,index:number)=>{
+    const relations = collectRelations(entry,index+offset);
+    const id=String(entry.agentId||"unknown"); const agent=metadata.get(id)||{key:id,name:id,evidenceLevel:"unverifiable" as const};
+    return cleanEvent({externalKey:`${key}:${index}`,sequence:index+offset,type:text(entry.parsed?.event)==="agent_registered"?"agent.registered":"agent.turn",agent,status:entry.parsed?.status || "unknown",occurredAt:(entry as any).at,summary:entry.parsed?.summary,content:(entry as any).rawText,payload:{round:(entry as any).round,parsed:entry.parsed},relations});
+  }));
+  return {key,canonicalKey:Boolean(sessionId),title:String(data.goal || "agent-team session"),status:String(data.kind || "unknown"),events,relations:events.flatMap((event: EventV1) => event.relations || [])};
 }

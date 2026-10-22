@@ -27,6 +27,20 @@ export async function profilesFromYaml(file = path.join(root, "config", "agents.
   return names;
 }
 
+/** Small dependency-free reader for the identity fields published by agents.yaml. */
+export async function profileDetailsFromYaml(file = path.join(root, "config", "agents.yaml")) {
+  const result = new Map(); let current;
+  for (const line of (await readFile(file, "utf8")).split(/\r?\n/)) {
+    const profile = line.match(/^ {2}([A-Za-z0-9_-]+):\s*$/);
+    if (profile) { current=profile[1]; result.set(current,{}); continue; }
+    if (!current) continue;
+    const display=line.match(/^ {4}displayName:\s*(.+)$/); if(display) result.get(current).displayName=display[1].trim();
+    const model=line.match(/^ {4}model:\s*(.+)$/); if(model) result.get(current).configuredModel=model[1].trim();
+    const skills=line.match(/^ {4}skills:\s*\[(.*)\]\s*$/); if(skills) result.get(current).declaredSkills=skills[1].split(",").map((x)=>x.trim()).filter(Boolean);
+  }
+  return result;
+}
+
 // Names that are never valid IDs: profiles from agents.yaml plus generic role words.
 async function knownProfiles() {
   return new Set([...BUILTIN_PROFILES, ...(await profilesFromYaml())]);
@@ -118,6 +132,11 @@ export async function runWriter(argv, { log = console.log } = {}) {
         agentId: redact(options.principal),
         provider: redact(options.provider),
         identitySource: "host-issued",
+        profile: "principal",
+        displayName: redact(options.displayName || "Principal"),
+        task: redact(options.goal || "Sesión Odradek"),
+        configuredModel: redact(options.model || "host-selected"),
+        declaredSkills: [],
       };
       await writeTranscript(file, transcript);
       log(file);
@@ -139,6 +158,7 @@ export async function runWriter(argv, { log = console.log } = {}) {
       if (!yamlProfiles.has(String(options.profile))) {
         throw new Error(`--profile "${options.profile}" no es un perfil conocido de agents.yaml (válidos: ${[...yamlProfiles].join(", ")})`);
       }
+      const profileDetails = (await profileDetailsFromYaml()).get(String(options.profile)) || {};
       const summary = redact(`Registro de agente ${options.profile}: ${options.task}`);
       const event = {
         runId: redact(options.runId || `${agentId}-registered-${Date.now()}`),
@@ -152,7 +172,11 @@ export async function runWriter(argv, { log = console.log } = {}) {
           event: "agent_registered",
           provider: redact(options.provider),
           profile: redact(options.profile),
+          displayName: redact(options.displayName || profileDetails.displayName || options.profile),
           task: redact(options.task),
+          configuredModel: redact(options.model || profileDetails.configuredModel || "host-selected"),
+          declaredSkills: (profileDetails.declaredSkills || []).map(redact),
+          evidenceLevel: "declared",
         },
       };
       const parent = options.parent || transcript.principal?.agentId;

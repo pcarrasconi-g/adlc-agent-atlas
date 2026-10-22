@@ -35,6 +35,11 @@ test("init persists the candidate session and real principal metadata", async (t
     agentId: "host-principal-123",
     provider: "codex",
     identitySource: "host-issued",
+    profile: "principal",
+    displayName: "Principal",
+    task: "Validate checkout",
+    configuredModel: "host-selected",
+    declaredSkills: [],
   });
   assert.deepEqual(session.transcript, []);
 });
@@ -83,7 +88,22 @@ test("init redacts secrets from all textual metadata", async (t) => {
     agentId: "principal token=[REDACTED]",
     provider: "codex token=[REDACTED]",
     identitySource: "host-issued",
+    profile: "principal",
+    displayName: "Principal",
+    task: "goal token=[REDACTED]",
+    configuredModel: "host-selected",
+    declaredSkills: [],
   });
+});
+
+test("agent registration publishes role metadata as declared, not as used skills", async (t) => {
+  const directory=await mkdtemp(path.join(os.tmpdir(),"odradek-event-")); t.after(()=>rm(directory,{recursive:true,force:true}));
+  const output=path.join(directory,"metadata.json"),base=["--session","metadata-session","--out",output];
+  await runWriter(["init",...base,...identity],quiet);
+  await runWriter(["agent_registered",...base,"--agent","worker-real-id","--parent",identity[1],"--provider","codex","--profile","engineer","--task","Implement visibility"],quiet);
+  const event=JSON.parse(await readFile(output,"utf8")).transcript[0].parsed;
+  assert.equal(event.displayName,"Software Engineer"); assert.equal(event.configuredModel,"host-selected");
+  assert.equal(event.evidenceLevel,"declared"); assert.ok(event.declaredSkills.includes("safe-workspace-and-guardrails"));
 });
 
 test("turn and close redact secrets from all argument-controlled text", async (t) => {

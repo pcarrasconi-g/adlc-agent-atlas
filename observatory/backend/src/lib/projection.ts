@@ -1,6 +1,9 @@
 export type ProjectionEvent = {
   id: string; sequence: number; type: string; status: string | null;
   agentId: string | null; agentKey: string | null; agentName: string | null; agentRole: string | null;
+  agentProfile?: string | null; agentDisplayName?: string | null; agentProvider?: string | null;
+  agentTask?: string | null; agentConfiguredModel?: string | null; agentDeclaredSkills?: string[] | null;
+  agentEvidenceLevel?: string | null; agentIsPrincipal?: boolean | null;
   timestamp: string | null; summary: string | null;
 };
 export type ProjectionEdge = {
@@ -9,7 +12,7 @@ export type ProjectionEdge = {
   sequenceStart?: number | null; sequenceEnd?: number | null;
 };
 
-const terminal = new Set(["done", "failed", "cancelled", "canceled", "complete", "completed"]);
+const terminal = new Set(["done", "failed", "blocked", "cancelled", "canceled", "complete", "completed"]);
 const normalStatus = (value: string | null | undefined) => value?.toLowerCase() || "unknown";
 
 export function parseAtSequence(value: unknown): number | undefined {
@@ -40,9 +43,11 @@ export function projectSession(input: {
     return status;
   };
   const nodes = [...byAgent.entries()].map(([id, event]) => ({
-    id, key: event.agentKey || id, name: event.agentName || "Unknown", role: event.agentRole,
-    status: displayAgentStatus(normalStatus(event.status)),
-    displayStatus: displayAgentStatus(normalStatus(event.status)),
+    id, key: event.agentKey || id, name: event.agentDisplayName || event.agentRole || event.agentName || "Unknown", role: event.agentRole,
+    profile:event.agentProfile, displayName:event.agentDisplayName, provider:event.agentProvider, task:event.agentTask,
+    configuredModel:event.agentConfiguredModel, declaredSkills:event.agentDeclaredSkills||[], evidenceLevel:event.agentEvidenceLevel||"unverifiable", isPrincipal:Boolean(event.agentIsPrincipal),
+    status: displayAgentStatus(normalStatus(event.status)), operationalStatus:displayAgentStatus(normalStatus(event.status)),
+    displayStatus: displayAgentStatus(normalStatus(event.status)), terminalResult:terminal.has(normalStatus(event.status))?normalStatus(event.status):null,
     recordedStatus: normalStatus(event.status), lastStatus: normalStatus(event.status),
     lastSequence: event.sequence,
   }));

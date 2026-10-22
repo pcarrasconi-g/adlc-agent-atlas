@@ -9,7 +9,29 @@ test("normalizes an agent-team transcript into versioned events", async () => {
   const dir=await mkdtemp(path.join(tmpdir(),"aw-")); const file=path.join(dir,"session.json");
   await writeFile(file,JSON.stringify({kind:"done",goal:"demo",transcript:[{runId:"r1",round:1,agentId:"architect",rawText:"token=secret",at:"2026-01-01T00:00:00.000Z",parsed:{status:"done",summary:"ready"}}]}));
   const got=await agentTeamEvents(file);
-  assert.equal(got.key,"r1"); assert.equal(got.events[0].schemaVersion,"aw.event.v1"); assert.doesNotMatch(got.events[0].content!,/secret/);
+  assert.equal(got.key,"r1"); assert.equal(got.canonicalKey,false); assert.equal(got.events[0].schemaVersion,"aw.event.v1"); assert.doesNotMatch(got.events[0].content!,/secret/);
+});
+
+test("uses sessionId from init, materializes the principal, and preserves declared registration metadata", async () => {
+  const dir=await mkdtemp(path.join(tmpdir(),"aw-")); const file=path.join(dir,"identity.json");
+  await writeFile(file,JSON.stringify({sessionId:"stable-session",kind:"working",goal:"Improve identity",principal:{agentId:"principal-uuid",provider:"cursor",displayName:"Principal",identitySource:"host-issued"},transcript:[
+    {runId:"changing-run-id",agentId:"worker-uuid",parentAgentId:"principal-uuid",parsed:{event:"agent_registered",status:"registered",profile:"engineer",displayName:"Software Engineer",provider:"cursor",task:"Implement metadata",configuredModel:"host-selected",declaredSkills:["safe-workspace-and-guardrails"],evidenceLevel:"unverifiable"}}
+  ]}));
+  const got=await agentTeamEvents(file);
+  assert.equal(got.key,"stable-session"); assert.equal(got.canonicalKey,true);
+  assert.equal(got.events[0].type,"session.principal"); assert.equal(got.events[0].agent?.isPrincipal,true);
+  assert.equal(got.events[1].agent?.displayName,"Software Engineer");
+  assert.deepEqual(got.events[1].agent?.declaredSkills,["safe-workspace-and-guardrails"]);
+  assert.equal(got.events[1].agent?.evidenceLevel,"unverifiable");
+  assert.equal(got.relations.length,1);
+  assert.equal(got.relations[0].sequenceStart,1);
+  assert.equal(got.events[1].sequence,1);
+});
+
+test("legacy registration without evidence does not claim host verification",async()=>{
+  const dir=await mkdtemp(path.join(tmpdir(),"aw-")); const file=path.join(dir,"legacy-evidence.json");
+  await writeFile(file,JSON.stringify({goal:"legacy",transcript:[{runId:"legacy-run",agentId:"legacy-agent",parsed:{event:"agent_registered",profile:"reviewer",status:"registered"}}]}));
+  const got=await agentTeamEvents(file); assert.equal(got.events[0].agent?.evidenceLevel,"unverifiable");
 });
 
 test("extracts explicit delegation and conversation signals without breaking old transcripts", async () => {

@@ -24,7 +24,16 @@ export const RelationV1 = z.object({
 });
 export type RelationV1 = z.infer<typeof RelationV1>;
 
-export const EventV1 = z.object({schemaVersion:z.literal("aw.event.v1").default("aw.event.v1"), externalKey:z.string().max(200), sequence:z.number().int().nonnegative(), type:z.string().max(80), agent:z.object({key:z.string().max(160),name:z.string().max(200),role:z.string().max(200).optional()}).optional(), status:z.string().max(80).optional(), occurredAt:z.string().datetime().optional(), summary:z.string().max(10000).optional(), content:z.string().max(200000).optional(), payload:z.record(z.unknown()).optional(), relations:z.array(RelationV1).max(100).optional()});
+export const AgentV1 = z.object({
+  key:z.string().max(160), name:z.string().max(200), role:z.string().max(200).optional(),
+  profile:z.string().max(120).optional(), displayName:z.string().max(200).optional(),
+  provider:z.string().max(120).optional(), task:z.string().max(10000).optional(),
+  configuredModel:z.string().max(200).optional(), declaredSkills:z.array(z.string().max(200)).max(100).optional(),
+  evidenceLevel:z.enum(["declared","host-recorded","behavior-evidenced","unverifiable"]).optional(),
+  isPrincipal:z.boolean().optional(),
+});
+export type AgentV1 = z.infer<typeof AgentV1>;
+export const EventV1 = z.object({schemaVersion:z.literal("aw.event.v1").default("aw.event.v1"), externalKey:z.string().max(200), sequence:z.number().int().nonnegative(), type:z.string().max(80), agent:AgentV1.optional(), status:z.string().max(80).optional(), occurredAt:z.string().datetime().optional(), summary:z.string().max(10000).optional(), content:z.string().max(200000).optional(), payload:z.record(z.unknown()).optional(), relations:z.array(RelationV1).max(100).optional()});
 export type EventV1 = z.infer<typeof EventV1>;
 export const hash = (v:string) => createHash("sha256").update(v).digest("hex");
 export function cleanRelation(input: unknown): RelationV1 {
@@ -38,6 +47,7 @@ export function cleanEvent(input: unknown): EventV1 {
   const event=EventV1.parse(input);
   return {
     ...event,
+    agent:event.agent ? redactDeep(event.agent) as AgentV1 : undefined,
     summary:event.summary&&bounded(event.summary,10000),
     content:event.content&&bounded(event.content),
     payload:redactDeep(event.payload||{}) as Record<string, unknown>,
