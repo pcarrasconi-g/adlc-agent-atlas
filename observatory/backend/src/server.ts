@@ -1,4 +1,4 @@
-import Fastify from "fastify"; import cors from "@fastify/cors"; import chokidar from "chokidar"; import path from "node:path"; import { realpath } from "node:fs/promises"; import { agentTeamEvents } from "./detectors/agent-team.js"; import { Store } from "./store.js"; import { createPool } from "./db.js"; import { parseAtSequence, projectSession } from "./lib/projection.js"; import { redact, redactDeep } from "./lib/redact.js";
+import Fastify from "fastify"; import cors from "@fastify/cors"; import chokidar from "chokidar"; import path from "node:path"; import { realpath } from "node:fs/promises"; import { agentTeamEvents } from "./detectors/agent-team.js"; import { Store } from "./store.js"; import { createPool } from "./db.js"; import { parseAtSequence, projectSession } from "./lib/projection.js"; import { redact, redactDeep } from "./lib/redact.js"; import { importFailureMessage, transcriptWatchOptions } from "./lib/watch.js";
 const db=createPool(); const app=Fastify({logger:true}); await app.register(cors,{origin:process.env.CORS_ORIGIN||"http://127.0.0.1:8090"});
 // Default SSE messages deliberately omit an `event:` field: EventSource.onmessage
 // consumers receive them without registering a custom event listener.
@@ -23,8 +23,8 @@ async function importFile(file:string){const full=await safeTranscript(file);ret
 // directory and filter file extensions below so newly-created explicit sessions
 // are discovered as well as pre-existing ones.
 const watchedFiles=[path.join(allowedRoot,"sessions")];
-const watcher=chokidar.watch(watchedFiles,{ignoreInitial:false,awaitWriteFinish:{stabilityThreshold:500}});
-const importJson=(file:string)=>{if(path.extname(file)===".json") importFile(file).catch(()=>{});};
+const watcher=chokidar.watch(watchedFiles,transcriptWatchOptions);
+const importJson=(file:string)=>{if(path.extname(file)===".json") importFile(file).catch((error:unknown)=>app.log.warn({file:path.basename(file),error:importFailureMessage(error)},"watch import failed"));};
 watcher.on("add",importJson).on("change",importJson);
 app.get("/health",async()=>{await db.query("SELECT 1");return {status:"ok"}});
 app.get("/api/projects",async()=> (await db.query("SELECT p.id,p.name,p.source_kind AS \"sourceKind\",p.created_at AS \"createdAt\",count(DISTINCT s.source_id)::int AS \"sessionCount\" FROM projects p LEFT JOIN sessions s ON s.project_id=p.id GROUP BY p.id ORDER BY p.created_at DESC")).rows);

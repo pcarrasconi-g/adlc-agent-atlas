@@ -69,7 +69,9 @@ export async function probeInstance({
     const deadline = Date.now() + waitMs;
     while (Date.now() < deadline && !found) {
       const sessions = await json(fetchImpl, new URL("api/sessions", base).toString(), timeoutMs);
-      found = Array.isArray(sessions) ? sessions.find((s) => s.externalKey === runId) ?? null : null;
+      // The backend uses the transcript's canonical sessionId as externalKey.
+      // runId belongs to an individual transcript entry and is not the API key.
+      found = Array.isArray(sessions) ? sessions.find((s) => s.externalKey === name) ?? null : null;
       if (!found) await new Promise((resolve) => setTimeout(resolve, pollMs));
     }
   } catch (error) {

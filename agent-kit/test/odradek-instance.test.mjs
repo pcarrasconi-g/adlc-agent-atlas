@@ -26,7 +26,9 @@ async function fakeServer(t, watchDir) {
       if (watchDir) {
         for (const f of await readdir(path.join(watchDir, "sessions")).catch(() => [])) {
           const d = JSON.parse(await readFile(path.join(watchDir, "sessions", f), "utf8"));
-          out.push({ id: `id-${f}`, externalKey: d.transcript?.[0]?.runId, status: d.kind, eventCount: d.transcript.length });
+          // The real backend detector gives canonical sessionId precedence over
+          // a per-entry runId when it publishes API externalKey.
+          out.push({ id: `id-${f}`, externalKey: d.sessionId, status: d.kind, eventCount: d.transcript.length });
         }
       }
       return res.end(JSON.stringify(out));
@@ -58,6 +60,7 @@ test("own instance: the probe is seen, reported healthy_own, and cleaned up", as
   assert.equal(result.urlSource, "test");
   assert.deepEqual(await readdir(path.join(out, "sessions")), []);
   assert.equal(server.deleted.length, 1);
+  assert.match(server.deleted[0], /^\/api\/sessions\/id-odradek-probe-[a-f0-9]+\.json$/);
 });
 
 test("foreign instance: healthy API that does not see this checkout is foreign_instance", async (t) => {
