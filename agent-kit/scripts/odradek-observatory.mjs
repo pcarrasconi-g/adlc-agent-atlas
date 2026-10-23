@@ -35,7 +35,7 @@ export async function checkObservatory({
   }
   if (probe === false) return { service: "healthy_unknown", ...base, reason: "instance_unknown", detail: "probe desactivado" };
   const result = await probeInstance({ baseUrl, fetchImpl, ...probe });
-  if (result.instance === "own") return { service: "healthy_own", ...base };
+  if (result.instance === "own") return { service: "healthy_own", ...base, ...(result.warning ? { warning: result.warning } : {}) };
   return {
     service: result.instance === "foreign" ? "healthy_foreign" : "healthy_unknown",
     ...base, reason: result.reason, detail: result.detail,

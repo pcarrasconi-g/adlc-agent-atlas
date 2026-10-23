@@ -113,7 +113,20 @@ export async function verifySession({
   try {
     const events = await getAllEvents(fetchImpl, base, match.id, timeoutMs);
     check("api_events_min", events.length >= minEvents, { required: minEvents, api: events.length });
-    if (local) check("api_events_match_local", events.length === entries.length, { api: events.length, local: entries.length });
+    if (local) {
+      const expected = [
+        ...(local.principal?.agentId ? [{ type: "session.principal", agentKey: String(local.principal.agentId) }] : []),
+        ...entries.map((entry) => ({
+          type: entry?.parsed?.event === "agent_registered" ? "agent.registered" : "agent.turn",
+          agentKey: String(entry?.agentId ?? "unknown"),
+        })),
+      ];
+      const observed = events.map((event) => ({
+        type: String(event?.type ?? "unknown"),
+        agentKey: String(event?.agentKey ?? event?.agent?.key ?? "unknown"),
+      }));
+      check("api_events_match_local", JSON.stringify(observed) === JSON.stringify(expected), { api: observed, local: expected });
+    }
     if (requireRegistration) check("api_agent_registered", events.some((e) => e.payload?.parsed?.event === "agent_registered"));
   } catch (error) {
     check("api_events_readable", false, String(error?.message ?? error));

@@ -25,13 +25,37 @@ async function fixture(t, { close = true } = {}) {
 
 test("passes when the API shows the closed session with all events", async (t) => {
   const file = await fixture(t);
-  const r = await verifySession({ session: "vs", file, probe: false, fetchImpl: api([{ id: "u1", externalKey: "run-1", status: "done", eventCount: 1 }], [{}]) });
+  const r = await verifySession({ session: "vs", file, probe: false, baseUrl: "http://test", fetchImpl: api([{ id: "u1", externalKey: "run-1", status: "done", eventCount: 2 }], [
+    { type: "session.principal", agentKey: "6eb10d1e-0000-4000-8000-000000000001" },
+    { type: "agent.turn", agentKey: "a1b2c3d4-0000-4000-8000-000000000002" },
+  ]) });
   assert.equal(r.ok, true);
+});
+
+test("matches two local transcript events to three API events including the materialized principal", async (t) => {
+  const file = await fixture(t);
+  await runWriter(["turn", "--session", "vs", "--out", file, "--agent", "a1b2c3d4-0000-4000-8000-000000000003", "--run-id", "run-2", "--summary", "second"], quiet);
+  const events = [
+    { type: "session.principal", agentKey: "6eb10d1e-0000-4000-8000-000000000001" },
+    { type: "agent.turn", agentKey: "a1b2c3d4-0000-4000-8000-000000000002" },
+    { type: "agent.turn", agentKey: "a1b2c3d4-0000-4000-8000-000000000003" },
+  ];
+  const r = await verifySession({ session: "vs", file, baseUrl: "http://test", probe: false, fetchImpl: api([{ id: "u1", externalKey: "run-1", status: "done" }], events) });
+  assert.equal(r.checks.find((c) => c.name === "api_events_match_local").ok, true);
+});
+
+test("event comparison rejects equal counts with a different type or agent key", async (t) => {
+  const file = await fixture(t);
+  const r = await verifySession({ session: "vs", file, baseUrl: "http://test", probe: false, fetchImpl: api(
+    [{ id: "u1", externalKey: "run-1", status: "done" }],
+    [{ type: "session.principal", agentKey: "wrong" }, { type: "agent.registered", agentKey: "a1b2c3d4-0000-4000-8000-000000000002" }],
+  ) });
+  assert.equal(r.checks.find((c) => c.name === "api_events_match_local").ok, false);
 });
 
 test("fails when the session is not visible in the API", async (t) => {
   const file = await fixture(t);
-  const r = await verifySession({ session: "vs", file, probe: false, fetchImpl: api([], []) });
+  const r = await verifySession({ session: "vs", file, baseUrl: "http://test", probe: false, fetchImpl: api([], []) });
   assert.equal(r.ok, false);
   assert.equal(r.checks.find((c) => c.name === "visible_in_api").ok, false);
   assert.match(r.hint, /bind mount/);
@@ -39,21 +63,21 @@ test("fails when the session is not visible in the API", async (t) => {
 
 test("no hint when the API is unreachable", async (t) => {
   const file = await fixture(t);
-  const r = await verifySession({ session: "vs", file, probe: false, fetchImpl: async () => { throw new Error("offline"); } });
+  const r = await verifySession({ session: "vs", file, baseUrl: "http://test", probe: false, fetchImpl: async () => { throw new Error("offline"); } });
   assert.equal(r.hint, undefined);
 });
 
 test("fails when closure is missing, and when the API is unreachable", async (t) => {
   const file = await fixture(t, { close: false });
-  const open = await verifySession({ session: "vs", file, probe: false, fetchImpl: api([{ id: "u1", externalKey: "run-1", status: "working" }], [{}]) });
+  const open = await verifySession({ session: "vs", file, baseUrl: "http://test", probe: false, fetchImpl: api([{ id: "u1", externalKey: "run-1", status: "working" }], [{}]) });
   assert.equal(open.ok, false);
   assert.equal(open.checks.find((c) => c.name === "closed").ok, false);
-  const down = await verifySession({ session: "vs", file, probe: false, fetchImpl: async () => { throw new Error("offline"); } });
+  const down = await verifySession({ session: "vs", file, baseUrl: "http://test", probe: false, fetchImpl: async () => { throw new Error("offline"); } });
   assert.equal(down.ok, false);
 });
 
 test("fails when the local session file does not exist", async () => {
-  const r = await verifySession({ session: "nope", file: "/nonexistent/x.json", probe: false, fetchImpl: api([], []) });
+  const r = await verifySession({ session: "nope", file: "/nonexistent/x.json", baseUrl: "http://test", probe: false, fetchImpl: api([], []) });
   assert.equal(r.ok, false);
 });
 
@@ -107,9 +131,10 @@ test("verification paginates sessions with more than 500 events", async (t) => {
     }
     const after = parsed.searchParams.get("afterSequence");
     const start = after === null ? 0 : Number(after) + 1;
-    return { ok: true, json: async () => entries.slice(start, start + 500).map((_, sequence) => ({ sequence: start + sequence })) };
+    const all = [{ sequence: 0, type: "session.principal", agentKey: "principal-real-1" }, ...entries.map((entry, sequence) => ({ sequence: sequence + 1, type: "agent.turn", agentKey: entry.agentId }))];
+    return { ok: true, json: async () => all.slice(start, start + 500) };
   };
-  const result = await verifySession({ session: "many", file, probe: false, fetchImpl });
+  const result = await verifySession({ session: "many", file, baseUrl: "http://test", probe: false, fetchImpl });
   assert.equal(result.ok, true);
   const eventRequests = requests.filter((request) => request.pathname.endsWith("/events"));
   assert.equal(eventRequests.length, 2);

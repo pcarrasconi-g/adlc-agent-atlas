@@ -82,6 +82,53 @@ test("unknown: probe that cannot write degrades to instance_unknown", async (t) 
   assert.equal(r.instance, "unknown");
 });
 
+test("probe removes its file and reports structured cleanup warning when API DELETE fails", async (t) => {
+  const out = await tmp(t);
+  const warnings = [];
+  const fetchImpl = async (url, init = {}) => {
+    if (init.method === "DELETE") return { ok: false, status: 503 };
+    const files = await readdir(path.join(out, "sessions")).catch(() => []);
+    return { ok: true, json: async () => files.map((file) => ({ id: `probe-id-${file}`, externalKey: file.replace(/\.json$/, "") })) };
+  };
+  const result = await probeInstance({ baseUrl: "http://test", outputDir: out, fetchImpl, waitMs: 100, pollMs: 5, onWarning: (warning) => warnings.push(warning) });
+  assert.equal(result.instance, "own");
+  assert.equal(result.warning.code, "probe_api_cleanup_failed");
+  assert.equal(result.warning.status, 503);
+  assert.deepEqual(warnings, [result.warning]);
+  assert.deepEqual(await readdir(path.join(out, "sessions")), []);
+});
+
+test("probe cleanup warnings redact credentials", async (t) => {
+  const out = await tmp(t);
+  const fetchImpl = async (_url, init = {}) => {
+    if (init.method === "DELETE") throw new Error("token=canary-secret password=hunter2");
+    const files = await readdir(path.join(out, "sessions")).catch(() => []);
+    return { ok: true, json: async () => files.map((file) => ({ id: `probe-id-${file}`, externalKey: file.replace(/\.json$/, "") })) };
+  };
+  const result = await probeInstance({ baseUrl: "http://test", outputDir: out, fetchImpl, waitMs: 100, pollMs: 5 });
+  assert.doesNotMatch(result.warning.detail, /canary-secret|hunter2/);
+  assert.match(result.warning.detail, /REDACTED/);
+});
+
+test("observatory check exposes a failed probe cleanup warning", async (t) => {
+  const out = await tmp(t);
+  const fetchImpl = async (url, init = {}) => {
+    if (init.method === "DELETE") return { ok: false, status: 502 };
+    if (String(url).endsWith("/api/projects")) return { ok: true, json: async () => [] };
+    const files = await readdir(path.join(out, "sessions")).catch(() => []);
+    return { ok: true, json: async () => files.map((file) => ({ id: `probe-id-${file}`, externalKey: file.replace(/\.json$/, "") })) };
+  };
+  const result = await checkObservatory({ baseUrl: "http://test", fetchImpl, probe: { outputDir: out, waitMs: 100, pollMs: 5 } });
+  assert.equal(result.service, "healthy_own");
+  assert.equal(result.warning.code, "probe_api_cleanup_failed");
+  assert.equal(result.warning.status, 502);
+});
+
+test("default URL resolution is independent of the checkout environment and .env", async (t) => {
+  const cleanRoot = await tmp(t);
+  assert.deepEqual(await resolveBaseUrl({ env: {}, rootDir: cleanRoot }), { baseUrl: "http://127.0.0.1:8090", source: "default" });
+});
+
 test("verify reports reason foreign_instance and fails on a foreign instance", async (t) => {
   const out = await tmp(t);
   const server = await fakeServer(t, null);

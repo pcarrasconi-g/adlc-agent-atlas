@@ -17,8 +17,12 @@ export function deriveInstance(rootDir) {
 export function isFree(port, host = "127.0.0.1") {
   return new Promise((resolve) => {
     const server = net.createServer();
-    server.once("error", () => resolve(false));
-    server.listen(port, host, () => server.close(() => resolve(true)));
+    server.once("error", (error) => {
+      if (error.code === "EADDRINUSE") return resolve({ status: "taken", code: error.code });
+      if (error.code === "EACCES" || error.code === "EPERM") return resolve({ status: "bind_not_permitted", code: error.code });
+      return resolve({ status: "bind_error", code: error.code ?? "UNKNOWN" });
+    });
+    server.listen(port, host, () => server.close(() => resolve({ status: "free" })));
   });
 }
 
@@ -28,7 +32,16 @@ export async function pickPort(hash, { free = isFree, taken = new Set() } = {}) 
   const start = parseInt(hash.slice(0, 8), 16) % span;
   for (let i = 0; i < span; i += 1) {
     const port = PORT_MIN + ((start + i) % span);
-    if (!taken.has(port) && await free(port)) return port;
+    if (taken.has(port)) continue;
+    const result = await free(port);
+    const status = typeof result === "boolean" ? (result ? "free" : "taken") : result?.status;
+    if (status === "free") return port;
+    if (status !== "taken") {
+      const error = new Error(`No se pudo comprobar el puerto ${port}: ${status === "bind_not_permitted" ? "permiso de bind denegado" : "error de bind"} (${result?.code ?? "UNKNOWN"})`);
+      error.code = status === "bind_not_permitted" ? "BIND_NOT_PERMITTED" : "BIND_CHECK_FAILED";
+      error.port = port;
+      throw error;
+    }
   }
   throw new Error(`Sin puertos libres en ${PORT_MIN}-${PORT_MAX}`);
 }

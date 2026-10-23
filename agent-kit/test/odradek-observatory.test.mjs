@@ -19,12 +19,14 @@ test("a healthy response without instance proof is never healthy_own", async () 
 
 test("reports unavailable for failed and malformed responses", async () => {
   const failed = await checkObservatory({
+    baseUrl: "http://example.test",
     fetchImpl: async () => ({ ok: false, status: 503 }),
   });
   assert.equal(failed.service, "unavailable");
   assert.equal(failed.reason, "HTTP 503");
 
   const malformed = await checkObservatory({
+    baseUrl: "http://example.test",
     fetchImpl: async () => ({ ok: true, json: async () => ({ status: "ok" }) }),
   });
   assert.equal(malformed.service, "unavailable");
@@ -33,6 +35,7 @@ test("reports unavailable for failed and malformed responses", async () => {
 
 test("does not attempt to start the observatory when connection fails", async () => {
   const result = await checkObservatory({
+    baseUrl: "http://example.test",
     fetchImpl: async () => { throw new Error("offline"); },
   });
   assert.equal(result.service, "unavailable");
@@ -41,6 +44,7 @@ test("does not attempt to start the observatory when connection fails", async ()
 
 test("reports a deterministic timeout", async () => {
   const result = await checkObservatory({
+    baseUrl: "http://example.test",
     timeoutMs: 1,
     fetchImpl: async (_url, { signal }) => new Promise((_resolve, reject) => {
       signal.addEventListener("abort", () => {

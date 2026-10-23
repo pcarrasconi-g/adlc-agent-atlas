@@ -6,6 +6,11 @@ import { fileURLToPath } from "node:url";
 export const agentKitRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 export const odradekRoot = path.resolve(agentKitRoot, "..");
 export const DEFAULT_BASE_URL = "http://127.0.0.1:8090";
+const safeDetail = (value) => String(value ?? "")
+  .replace(/((?:api[_-]?key|token|password|secret)\s*[:=]\s*)[^\s,;]+/gi, "$1[REDACTED]")
+  .replace(/sk-[A-Za-z0-9_-]{16,}/g, "[REDACTED]")
+  .replace(/(Bearer\s+)[A-Za-z0-9._-]+/gi, "$1[REDACTED]")
+  .slice(0, 200);
 
 /** URL precedence: --base-url > ODRADEK_BASE_URL > ODRADEK_PORT in <ODRADEK_ROOT>/.env; otherwise setup_required. */
 export async function resolveBaseUrl({ baseUrl, env = process.env, rootDir = odradekRoot } = {}) {
@@ -49,6 +54,7 @@ export async function probeInstance({
   timeoutMs = 3000,
   waitMs = 5000,
   pollMs = 250,
+  onWarning = () => {},
 } = {}) {
   const nonce = randomBytes(6).toString("hex");
   const name = `odradek-probe-${nonce}`;
@@ -62,9 +68,10 @@ export async function probeInstance({
       transcript: [{ runId, round: 1, agentId: "odradek-probe", at: new Date().toISOString(), rawText: "probe", parsed: { status: "done", summary: "probe" } }],
     })}\n`, { mode: 0o644 });
   } catch (error) {
-    return { instance: "unknown", reason: "instance_unknown", detail: `no se pudo escribir el probe: ${error?.code ?? error?.message}` };
+    return { instance: "unknown", reason: "instance_unknown", detail: `no se pudo escribir el probe: ${safeDetail(error?.code ?? error?.message)}` };
   }
   let found = null;
+  let failure = null;
   try {
     const deadline = Date.now() + waitMs;
     while (Date.now() < deadline && !found) {
@@ -75,13 +82,21 @@ export async function probeInstance({
       if (!found) await new Promise((resolve) => setTimeout(resolve, pollMs));
     }
   } catch (error) {
-    await rm(file, { force: true });
-    return { instance: "unknown", reason: "instance_unknown", detail: String(error?.message ?? error) };
+    failure = error;
+  } finally {
+    await rm(file, { force: true }).catch((error) => onWarning({ code: "probe_file_cleanup_failed", detail: safeDetail(error?.code ?? error?.message ?? error) }));
   }
-  await rm(file, { force: true });
+  if (failure) return { instance: "unknown", reason: "instance_unknown", detail: safeDetail(failure?.message ?? failure) };
   if (found) {
-    try { await fetchImpl(new URL(`api/sessions/${found.id}`, base).toString(), { method: "DELETE", signal: AbortSignal.timeout(timeoutMs) }); } catch { /* best effort */ }
-    return { instance: "own" };
+    let cleanupWarning;
+    try {
+      const response = await fetchImpl(new URL(`api/sessions/${encodeURIComponent(found.id)}`, base).toString(), { method: "DELETE", signal: AbortSignal.timeout(timeoutMs) });
+      if (!response.ok) throw Object.assign(new Error(`HTTP ${response.status}`), { status: response.status });
+    } catch (error) {
+      cleanupWarning = { code: "probe_api_cleanup_failed", probeSessionId: found.id, ...(error?.status ? { status: error.status } : {}), detail: safeDetail(error?.message ?? error) };
+      onWarning(cleanupWarning);
+    }
+    return { instance: "own", ...(cleanupWarning ? { warning: cleanupWarning } : {}) };
   }
   return { instance: "foreign", reason: "foreign_instance", detail: "el servicio no importó el probe escrito en este checkout (otro checkout/instancia, o mount obsoleto)" };
 }

@@ -38,7 +38,15 @@ test("a really occupied port is skipped", async (t) => {
   t.after(() => server.close());
   const { isFree } = await import("../scripts/odradek-setup.mjs");
   if (server.listening) assert.notEqual(await pickPort(hash), wanted);
-  assert.equal(await isFree(wanted), !server.listening);
+  assert.equal((await isFree(wanted)).status, server.listening ? "taken" : "free");
+});
+
+test("permission failures abort port selection instead of masquerading as occupied", async () => {
+  const { hash } = deriveInstance("/x/odradek");
+  await assert.rejects(
+    pickPort(hash, { free: async () => ({ status: "bind_not_permitted", code: "EACCES" }) }),
+    (error) => error.code === "BIND_NOT_PERMITTED" && /permiso de bind denegado/.test(error.message),
+  );
 });
 
 test("setup writes missing keys, is idempotent, and never overwrites", async (t) => {
