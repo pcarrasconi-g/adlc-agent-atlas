@@ -1,5 +1,7 @@
 /* Public release identity override. The underlying observability UI remains unchanged. */
-header b[aria-label="Odradek"] { font-size: 0; }
+header b[aria-label="Odradek"] {
+  font-size: 0;
+}
 header b[aria-label="Odradek"]::after {
   content: "Odradek";
   font-size: 20px;
@@ -7,7 +9,17 @@ header b[aria-label="Odradek"]::after {
   color: #183b8c;
   letter-spacing: -0.02em;
 }
-header small { font-size: 0; }
-header small::after { content: "local thread observatory"; font-size: 11px; }
-header span { font-size: 0; }
-header span::after { content: "● Local updates"; font-size: 11px; }
+header small {
+  font-size: 0;
+}
+header small::after {
+  content: "local thread observatory";
+  font-size: 11px;
+}
+header span {
+  font-size: 0;
+}
+header span::after {
+  content: "● Local updates";
+  font-size: 11px;
+}
