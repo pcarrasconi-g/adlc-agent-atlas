@@ -51,6 +51,7 @@ export function ProvChip({ p }: { p: Provenance }) {
 }
 
 export function LiveBar(p: {
+  demo?: boolean;
   follow: boolean;
   recorded: boolean;
   connected: boolean;
@@ -73,8 +74,12 @@ export function LiveBar(p: {
             ? "◌ LIVE · UNCERTAIN"
             : "● LIVE"
           : mode === "recorded"
-            ? "◼ RECORDED"
-            : "❙❙ HISTORY"}
+            ? p.demo
+              ? "◼ RECORDED DEMO"
+              : "◼ RECORDED"
+            : p.demo
+              ? "❙❙ HISTORY · RECORDED DEMO"
+              : "❙❙ HISTORY"}
       </span>
       <span role="status" aria-live="polite" className="livetext">
         {mode === "live" &&
@@ -84,7 +89,9 @@ export function LiveBar(p: {
               ? `Following the newest step · no signal for ${ageLabel(age)}, so activity is uncertain`
               : `Following the newest step · last signal ${ageLabel(age)} ago`)}
         {mode === "recorded" &&
-          `${p.total} steps recorded · showing the final state`}
+          (p.demo
+            ? `${p.total} steps from a real Claude Code + ADLC run, anonymized · nothing here is running`
+            : `${p.total} steps recorded · showing the final state`)}
         {mode === "history" &&
           `Viewing step ${p.total ? p.cursor + 1 : 0} of ${p.total}${p.unseen ? ` · ${p.unseen} new since` : ""}`}
       </span>
@@ -414,5 +421,146 @@ export function AgentBrief(p: {
         </button>
       </section>
     </div>
+  );
+}
+
+// ---- Signals and decisions (Increment 3)
+import type { Signal } from "./lib/signals.ts";
+import type { DecisionView } from "./lib/decisions.ts";
+
+const CONF_LABEL = {
+  high: "High confidence",
+  medium: "Medium confidence",
+  low: "Low confidence",
+} as const;
+
+export function SignalsPanel(p: {
+  signals: Signal[];
+  decisions: DecisionView[];
+  onShow: (s: Signal) => void;
+  onStep: (sequence: number) => void;
+}) {
+  const [copied, setCopied] = useState<string | null>(null);
+  if (!p.signals.length && !p.decisions.length) return null;
+  const copy = async (id: string, text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(id);
+      setTimeout(() => setCopied(null), 1500);
+    } catch {}
+  };
+  return (
+    <details className="signals" open>
+      <summary>
+        Signals ({p.signals.length})
+        {p.decisions.length
+          ? ` · ${p.decisions.length} decision${p.decisions.length > 1 ? "s" : ""}`
+          : ""}
+      </summary>
+      <div className="signal-list">
+        {p.signals.map((s, i) => (
+          <article key={s.id} className={`signal ${s.kind} ${s.confidence}`}>
+            <details open={i === 0}>
+              <summary className="signal-head">
+                <span className="mark" aria-hidden="true">
+                  {s.kind === "stale" ? "◌" : "⚠"}
+                </span>
+                <b>{s.title}</b>
+                <span className={`conf ${s.confidence}`}>
+                  {CONF_LABEL[s.confidence]}
+                </span>
+                <ProvChip p={s.provenance} />
+              </summary>
+              <p>{s.fact}</p>
+              {s.compare && (
+                <div className="compare" aria-label="Before and after">
+                  {(
+                    [
+                      ["Baseline", s.compare.baseline],
+                      ["Now", s.compare.current],
+                    ] as const
+                  ).map(([k, side]) => (
+                    <div key={k}>
+                      <small>
+                        {k} · {side.label}
+                      </small>
+                      <b>{side.result}</b>
+                      <span>{side.where}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <p className="impact">
+                <b>Why it matters:</b> {s.impact}
+              </p>
+              <p className="ask">
+                <b>Next question:</b> {s.question}
+              </p>
+              <div className="signal-actions">
+                <button onClick={() => p.onShow(s)}>Show on the map</button>
+                <button onClick={() => copy(s.id, s.suggestion)}>
+                  {copied === s.id ? "Copied" : "Copy for Claude Code"}
+                </button>
+              </div>
+              <details className="ev">
+                <summary>Evidence ({s.evidence.length})</summary>
+                <ul>
+                  {s.evidence.map((e, k) => (
+                    <li key={k}>
+                      {e.label}
+                      {e.sequence !== null && (
+                        <button
+                          className="link"
+                          onClick={() => p.onStep(e.sequence!)}
+                        >
+                          {" "}
+                          show step
+                        </button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            </details>
+          </article>
+        ))}
+        {p.decisions.map((d) => (
+          <article key={d.decision.sequence} className="signal decision">
+            <details open>
+              <summary className="signal-head">
+                <span className="mark" aria-hidden="true">
+                  ◆
+                </span>
+                <b>Decision: {d.decision.decision}</b>
+                <ProvChip p="declared" />
+              </summary>
+              {d.decision.reason && <p>Reason given: {d.decision.reason}</p>}
+              <div
+                className="compare"
+                aria-label="Before and after the decision"
+              >
+                <div>
+                  <small>Before</small>
+                  {d.before.map((x) => (
+                    <span key={x}>{x}</span>
+                  ))}
+                </div>
+                <div>
+                  <small>After</small>
+                  {d.after.map((x) => (
+                    <span key={x}>{x}</span>
+                  ))}
+                </div>
+              </div>
+              <div className="signal-actions">
+                <button onClick={() => p.onStep(d.decision.sequence)}>
+                  Show this moment
+                </button>
+              </div>
+            </details>
+          </article>
+        ))}
+      </div>
+    </details>
   );
 }

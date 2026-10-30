@@ -65,7 +65,7 @@ function collectRelations(entry: RawEntry, sequence: number): RelationV1[] {
 const eventType = (event: unknown) => {
   const value = text(event);
   if (value === "agent_registered") return "agent.registered";
-  return value && /^(gate\.(started|finished)|task\.(created|completed))$/.test(value) ? value : "agent.turn";
+  return value && /^(gate\.(started|finished)|task\.(created|completed)|guard\.blocked|checkpoint)$/.test(value) ? value : "agent.turn";
 };
 
 /** Adapter for agent-team's documented explicit local session outputs. */

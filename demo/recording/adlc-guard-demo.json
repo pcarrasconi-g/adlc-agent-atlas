@@ -1,0 +1,341 @@
+{
+  "sessionId": "atlas-demo",
+  "goal": "Recorded demo: ADLC guard, a lint baseline and a human decision",
+  "kind": "done",
+  "source": "atlas-adapter",
+  "principal": {
+    "agentId": "demo-session",
+    "displayName": "Claude Code (principal)",
+    "profile": "principal",
+    "provider": "claude-code",
+    "task": "Claude Code session (ADLC execution)",
+    "identitySource": "host-issued"
+  },
+  "transcript": [
+    {
+      "round": 0,
+      "agentId": "demo-session",
+      "at": "2026-10-30T14:53:58.498Z",
+      "parsed": {
+        "event": "gate.started",
+        "status": "working",
+        "summary": "Check just lint started",
+        "recipe": "just lint",
+        "cwd": "…/repo",
+        "projectDir": "…/repo"
+      }
+    },
+    {
+      "round": 1,
+      "agentId": "demo-session",
+      "at": "2026-10-30T14:53:58.628Z",
+      "parsed": {
+        "event": "gate.finished",
+        "status": "working",
+        "summary": "Check just lint failed (exit 1, 5 findings)",
+        "recipe": "just lint",
+        "exit": 1,
+        "fingerprint": "6083b324",
+        "findings": 5,
+        "durationMs": 68,
+        "cwd": "…/repo",
+        "projectDir": "…/repo",
+        "rev": "5e1367e82938",
+        "dirty": false,
+        "repo": "6035b873"
+      }
+    },
+    {
+      "round": 2,
+      "agentId": "demo-session",
+      "at": "2026-10-30T14:53:59.242Z",
+      "parsed": {
+        "status": "working",
+        "summary": "Tool ToolSearch finished",
+        "tool": "ToolSearch",
+        "durationMs": 2
+      }
+    },
+    {
+      "round": 3,
+      "agentId": "demo-session",
+      "at": "2026-10-30T14:54:03.849Z",
+      "parsed": {
+        "event": "task.created",
+        "status": "working",
+        "summary": "Task created: Add greeting module",
+        "taskId": "1"
+      }
+    },
+    {
+      "round": 4,
+      "agentId": "demo-session",
+      "at": "2026-10-30T14:54:03.908Z",
+      "parsed": {
+        "status": "working",
+        "summary": "Tool TaskCreate finished",
+        "tool": "TaskCreate",
+        "durationMs": 61
+      }
+    },
+    {
+      "round": 5,
+      "agentId": "demo-session",
+      "at": "2026-10-30T14:54:07.025Z",
+      "parsed": {
+        "status": "working",
+        "summary": "Delegating: Add greeting module",
+        "tool": "Agent"
+      }
+    },
+    {
+      "round": 6,
+      "agentId": "a1",
+      "at": "2026-10-30T14:54:07.137Z",
+      "parsed": {
+        "event": "agent_registered",
+        "profile": "adlc:frontend-engineer",
+        "displayName": "adlc:frontend-engineer",
+        "provider": "claude-code",
+        "evidenceLevel": "host-recorded",
+        "status": "working",
+        "summary": "Started",
+        "task": "Add greeting module",
+        "worktree": "agent-a1",
+        "cwd": "…/agent-a1",
+        "projectDir": "…/repo"
+      },
+      "relations": [
+        {
+          "source": "demo-session",
+          "target": "a1",
+          "kind": "delegation",
+          "provenance": "inferred",
+          "confidence": 0.6,
+          "metadata": {
+            "rule": "adjacent-to-agent-launch"
+          }
+        }
+      ]
+    },
+    {
+      "round": 7,
+      "agentId": "a1",
+      "at": "2026-10-30T14:54:09.550Z",
+      "parsed": {
+        "status": "working",
+        "summary": "Tool Write finished",
+        "tool": "Write",
+        "durationMs": 23
+      }
+    },
+    {
+      "round": 8,
+      "agentId": "a1",
+      "at": "2026-10-30T14:54:10.946Z",
+      "parsed": {
+        "event": "gate.started",
+        "status": "working",
+        "summary": "Check just typecheck started",
+        "recipe": "just typecheck",
+        "worktree": "agent-a1",
+        "cwd": "…/agent-a1",
+        "projectDir": "…/repo"
+      }
+    },
+    {
+      "round": 9,
+      "agentId": "a1",
+      "at": "2026-10-30T14:54:11.057Z",
+      "parsed": {
+        "event": "gate.finished",
+        "status": "working",
+        "summary": "Check just typecheck passed",
+        "recipe": "just typecheck",
+        "exit": 0,
+        "durationMs": 49,
+        "worktree": "agent-a1",
+        "cwd": "…/agent-a1",
+        "projectDir": "…/repo",
+        "rev": "5e1367e82938",
+        "dirty": true,
+        "repo": "6035b873"
+      }
+    },
+    {
+      "round": 10,
+      "agentId": "a1",
+      "at": "2026-10-30T14:54:12.456Z",
+      "parsed": {
+        "event": "gate.started",
+        "status": "working",
+        "summary": "Check just lint started",
+        "recipe": "just lint",
+        "worktree": "agent-a1",
+        "cwd": "…/agent-a1",
+        "projectDir": "…/repo"
+      }
+    },
+    {
+      "round": 11,
+      "agentId": "a1",
+      "at": "2026-10-30T14:54:12.562Z",
+      "parsed": {
+        "event": "gate.finished",
+        "status": "working",
+        "summary": "Check just lint failed (exit 1, 5 findings)",
+        "recipe": "just lint",
+        "exit": 1,
+        "fingerprint": "6083b324",
+        "findings": 5,
+        "durationMs": 44,
+        "worktree": "agent-a1",
+        "cwd": "…/agent-a1",
+        "projectDir": "…/repo",
+        "rev": "5e1367e82938",
+        "dirty": true,
+        "repo": "6035b873"
+      }
+    },
+    {
+      "round": 12,
+      "agentId": "a1",
+      "at": "2026-10-30T14:54:16.663Z",
+      "parsed": {
+        "status": "done",
+        "summary": "Stopped (result text not stored)",
+        "worktree": "agent-a1",
+        "cwd": "…/agent-a1",
+        "projectDir": "…/repo",
+        "rootRev": "5e1367e82938",
+        "rootDirty": false,
+        "rootRepo": "6035b873"
+      }
+    },
+    {
+      "round": 13,
+      "agentId": "demo-session",
+      "at": "2026-10-30T14:54:16.812Z",
+      "parsed": {
+        "status": "working",
+        "summary": "Launch of adlc:frontend-engineer confirmed: completed",
+        "tool": "Agent"
+      },
+      "relations": [
+        {
+          "source": "demo-session",
+          "target": "a1",
+          "kind": "delegation",
+          "provenance": "observed",
+          "confidence": 1,
+          "metadata": {
+            "rule": "agent-tool-response"
+          }
+        }
+      ]
+    },
+    {
+      "round": 14,
+      "agentId": "demo-session",
+      "at": "2026-10-30T14:54:18.306Z",
+      "parsed": {
+        "event": "task.completed",
+        "status": "working",
+        "summary": "Task completion requested: Add greeting module",
+        "taskId": "1",
+        "rootRev": "5e1367e82938",
+        "rootDirty": false,
+        "rootRepo": "6035b873"
+      }
+    },
+    {
+      "round": 15,
+      "agentId": "demo-session",
+      "at": "2026-10-30T14:54:18.412Z",
+      "parsed": {
+        "status": "working",
+        "summary": "Tool TaskUpdate finished",
+        "tool": "TaskUpdate",
+        "durationMs": 144
+      }
+    },
+    {
+      "round": 16,
+      "agentId": "demo-session",
+      "at": "2026-10-30T14:54:18.438Z",
+      "parsed": {
+        "event": "guard.blocked",
+        "status": "working",
+        "summary": "ADLC guard blocked completion: just lint failed (lint: 5 findings)",
+        "recipes": [
+          "lint"
+        ],
+        "findings": {
+          "lint": 5
+        },
+        "mode": "taskcompleted",
+        "rootRev": "5e1367e82938",
+        "rootDirty": false,
+        "rootRepo": "6035b873",
+        "rootCwd": "…/repo"
+      }
+    },
+    {
+      "round": 17,
+      "agentId": "demo-session",
+      "at": "2026-10-30T14:54:24.863Z",
+      "parsed": {
+        "status": "done",
+        "summary": "Principal finished its turn"
+      }
+    },
+    {
+      "round": 18,
+      "agentId": "demo-session",
+      "at": "2026-10-30T14:54:29.689Z",
+      "parsed": {
+        "event": "checkpoint",
+        "status": "working",
+        "summary": "Decision (execute): Limit the completion guard to typecheck",
+        "phase": "execute",
+        "decision": "Limit the completion guard to typecheck",
+        "reason": "lint failures are the legacy baseline, same as before the change"
+      }
+    },
+    {
+      "round": 19,
+      "agentId": "demo-session",
+      "at": "2026-10-30T14:54:32.102Z",
+      "parsed": {
+        "event": "task.completed",
+        "status": "working",
+        "summary": "Task completion requested: Add greeting module",
+        "taskId": "1",
+        "rootRev": "5e1367e82938",
+        "rootDirty": false,
+        "rootRepo": "6035b873"
+      }
+    },
+    {
+      "round": 20,
+      "agentId": "demo-session",
+      "at": "2026-10-30T14:54:32.166Z",
+      "parsed": {
+        "status": "working",
+        "summary": "Tool TaskUpdate finished",
+        "tool": "TaskUpdate",
+        "durationMs": 66
+      }
+    },
+    {
+      "round": 21,
+      "agentId": "demo-session",
+      "at": "2026-10-30T14:54:38.069Z",
+      "parsed": {
+        "status": "done",
+        "summary": "Principal finished its turn"
+      }
+    }
+  ],
+  "recordedAt": "2026-10-30T14:53:56.284Z"
+}

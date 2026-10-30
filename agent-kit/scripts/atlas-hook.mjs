@@ -11,8 +11,10 @@
 // Other uses:  atlas-hook.mjs purge <session-id|--all>
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { normalizeHook } from "./lib/atlas-normalize.mjs";
-import { prune, purge, recordHook } from "./lib/atlas-store.mjs";
+import { normalizeHook, pathRef } from "./lib/atlas-normalize.mjs";
+import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { prune, purge, recordHook, scanTranscripts } from "./lib/atlas-store.mjs";
 
 const debug = process.env.ATLAS_DEBUG === "1";
 const note = (...a) => debug && console.error("[atlas]", ...a);
@@ -34,6 +36,19 @@ async function readStdin() {
   return Buffer.concat(chunks).toString("utf8");
 }
 
+/** Revision and cleanliness of a checkout, to tell whether two measurements are comparable. */
+function gitContext(dir) {
+  try {
+    const run = (args) => execFileSync("git", ["-C", dir, ...args], { encoding: "utf8", timeout: 700, stdio: ["ignore", "pipe", "ignore"] }).trim();
+    const rev = run(["rev-parse", "--short=12", "HEAD"]);
+    const dirty = run(["status", "--porcelain", "--", ".", ":(exclude).claude"]).length > 0;
+    const common = path.resolve(dir, run(["rev-parse", "--git-common-dir"]));
+    return { rev, dirty, repo: createHash("sha256").update(common).digest("hex").slice(0, 8) };
+  } catch {
+    return undefined; // not a repository, no git, or too slow: leave it unknown
+  }
+}
+
 async function main() {
   if (process.env.ATLAS_DISABLED === "1") return;
   if (process.argv[2] === "purge") {
@@ -48,7 +63,7 @@ async function main() {
   } catch {
     return note("stdin is not JSON");
   }
-  const record = normalizeHook(payload, { receivedAt: new Date().toISOString(), env: process.env });
+  const record = normalizeHook(payload, { receivedAt: new Date().toISOString(), env: process.env, git: gitContext });
   if (!record) return note("ignored", payload?.hook_event_name);
   if (record.kind === "session_start") {
     try {
@@ -56,6 +71,10 @@ async function main() {
     } catch {}
   }
   note(record.kind, recordHook(out, record));
+  // The ADLC guard's verdict lands in the transcript after the hooks ran.
+  const paths = [payload.transcript_path, payload.agent_transcript_path].filter((p) => typeof p === "string" && p.endsWith(".jsonl"));
+  const root = { rootRev: record.rootRev, rootDirty: record.rootDirty, rootRepo: record.rootRepo, rootCwd: record.rootRev ? pathRef(process.env.CLAUDE_PROJECT_DIR) : undefined };
+  for (const g of scanTranscripts(out, record.session, { event: payload.hook_event_name, paths, agent: record.agent, root })) note("guard", recordHook(out, g));
 }
 
 try {

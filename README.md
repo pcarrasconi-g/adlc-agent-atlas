@@ -9,11 +9,11 @@ received, what they delivered, what was verified and what deserves attention.
 It is not a chatbot, a remote control or a replacement for ADLC.
 
 Status: MVP in progress. Done: the event contract and trust semantics
-([docs/ATLAS_EVENT_CONTRACT.md](docs/ATLAS_EVENT_CONTRACT.md)) and the map with
-live-follow, replay and the Learn / Diagnose readings. Still to come, in
-[the MVP plan](docs/ADLC_AGENT_ATLAS_MVP_PLAN.md): the signals
-and the recorded demo story. The hook adapter is in
-([docs/ATLAS_EVENT_CONTRACT.md](docs/ATLAS_EVENT_CONTRACT.md), section 8).
+([docs/ATLAS_EVENT_CONTRACT.md](docs/ATLAS_EVENT_CONTRACT.md)), the map with
+live-follow, replay and the Learn / Diagnose readings, the optional hook adapter,
+the four signals with baseline comparison, and a recorded demo. Still to come, in
+[the MVP plan](docs/ADLC_AGENT_ATLAS_MVP_PLAN.md): adoption in other projects
+(install and uninstall, two project modes).
 
 Internal package names, paths, scripts and environment variables still say
 `odradek`.
@@ -52,6 +52,14 @@ you decide to.
 
 `npm --prefix agent-kit run observatory:check` reports whether the service is up
 and belongs to this checkout.
+
+## See the demo
+
+The built app opens a **recorded demo** with no API and no Claude Code: a real ADLC
+run in which the completion guard blocks on a lint failure that was already
+there, and a person decides what to do. See [the demo guide](docs/DEMO_GUIDE.md)
+and [demo/README.md](demo/README.md) (the latter also explains the optional live
+run, which spends real model calls).
 
 ## Try the recorded sample
 

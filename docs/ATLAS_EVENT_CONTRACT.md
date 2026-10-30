@@ -143,12 +143,15 @@ an agent is running. Adapter downtime and dropped events are recorded as gaps.
 
 1. Verify `TeammateIdle`, Agent Teams and task↔agent correlation with a real ADLC team run.
 2. Verify ADLC `agent_type` values on the target setup.
-3. ADLC's own guard (`verify-guard.sh`) runs as a hook command, so its result is
-   not visible to other hooks. Atlas observes the checks agents run through the
-   Bash tool, and records the guard's context (`projectDir`, from
-   `CLAUDE_PROJECT_DIR`) beside each agent's `cwd`/worktree so Increment 3 can
-   show a mismatch. Observing the guard's own exit code would need a wrapper
-   around it, which would change ADLC; it is not planned.
+3. ADLC's guard (`verify-guard.sh`) runs as a hook command, so no other hook sees
+   its result. Its verdict does appear in the session transcript as a tool result
+   (`TaskCompleted hook feedback: … Verification failed before completion … --- just lint failed ---`).
+   The adapter reads only the new bytes of that file after a `TaskCompleted` or
+   `SubagentStop`, keeps the recipe names and finding counts, and drops the rest.
+   Seen with the plugin loaded from disk: the `TaskCompleted` guard fires and
+   blocks; the `SubagentStop` guard did **not** fire for the namespaced agent type
+   `adlc:frontend-engineer`, because its matcher lists bare type names. Re-check
+   on the installed plugin before relying on either.
 4. Branch is never reported; do not display or infer it.
 
 ## 8. The adapter (Increment 2)
@@ -184,3 +187,51 @@ claude --settings /tmp/atlas-settings.json      # leave the flag out to turn it 
   are removed at `SessionStart`; `atlas-hook.mjs purge <session|--all>` removes
   them on demand and never touches sessions written by hand.
 - **Environment:** `ATLAS_OUT_DIR`, `ATLAS_DISABLED=1`, `ATLAS_DEBUG=1`.
+
+## 9. Checks, the guard, decisions and signals (Increment 3)
+
+**Reading a check's result honestly.** A `Bash` call counts as a check when it
+runs a recognised verification recipe (`just lint`, `npm test`, `make test`,
+`pytest`, ...); only the recipe label is kept. Its exit code is trusted only when
+nothing can mask it. `just lint; echo "exit=$?"` always exits 0 and `just lint |
+tail` exits with `tail`'s code, so those record an **unknown** result, never
+"passed". A failed call carries `Exit code N` in `PostToolUseFailure.error`; a
+succeeded one means 0. For failures the adapter also keeps a count of findings
+("5 problems") and a fingerprint of the shape of the output, never the output.
+
+**Context for comparison.** Each finished check records `rev` (short commit),
+`dirty` (uncommitted changes, ignoring `.claude/`) and `repo` (hash of the git
+common dir), read with `git` when the check ends. `SubagentStop`, `TaskCompleted`
+and guard records carry the same for `CLAUDE_PROJECT_DIR`, the tree ADLC's guard
+runs in (`rootRev`, `rootDirty`, `rootRepo`).
+
+**Decisions.** A person or the principal publishes one by running
+`node agent-kit/scripts/atlas-checkpoint.mjs --phase … --decision "…" --reason "…"`
+through Bash. The hook records those three strings (redacted, 120 characters
+each) as `checkpoint`, provenance *declared*. It has no other effect.
+
+**Signals** (computed in the page from the recording as of the step on screen;
+no model, no tokens; at most three, strongest first):
+
+| Signal | Fires when | Never says |
+| --- | --- | --- |
+| Repeated failure | the same recipe fails twice or more with the same exit code and failure shape (ADLC guard blocks count) | why it fails |
+| Context | a check ran outside the agent's own worktree, or the guard blocked after running in the project root while an agent works in a worktree | that ADLC has a bug |
+| Baseline | a comparable earlier measurement exists: same recipe and repository, clean tree, same revision | "pre-existing" or "worse" from the number of errors alone |
+| Silence | a live agent has no signal past the freshness window, or a check started long ago with no result | a loop or a block |
+
+Without a comparable earlier measurement the baseline card says "origin of the
+failure not determined" with low confidence. With one, it separates: passed at
+baseline and fails now (regression candidate); more or fewer findings than
+baseline; same failure at baseline (pre-existing); failing in a way that cannot be
+compared. Each card has the observable fact, a confidence, what it may mean, its
+evidence (each item opens the step) and the next concrete question, plus a
+suggestion to copy into Claude Code. Atlas never sends it.
+
+**Recorded demo.** `demo/run-demo.mjs` runs the story for real (the principal
+measures the lint baseline in the root; a `frontend-engineer` in a worktree adds a
+module, typecheck passes and lint fails with the same legacy findings; ADLC's
+completion guard blocks on lint from the root; a scripted person decides, in
+Claude Code, to limit the guard to typecheck; completion is asked again). The
+frozen, anonymized result is `demo/recording/adlc-guard-demo.json`, served to the
+page as `observatory/frontend/public/demo/demo.json`, which opens with no API.

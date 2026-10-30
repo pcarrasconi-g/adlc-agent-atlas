@@ -8,6 +8,7 @@ import {
   DiagnosePanel,
   Filters,
   LiveBar,
+  SignalsPanel,
   StoryPanel,
   statusIcon,
   type DiagnoseRow,
@@ -21,6 +22,10 @@ import {
   type Provenance,
 } from "./lib/provenance.ts";
 import { buildStory, linkKey } from "./lib/story.ts";
+import { describeDecisions } from "./lib/decisions.ts";
+import { demoRoute, isDemoId, loadDemo, type Demo } from "./lib/demo.ts";
+import { extractEvidence } from "./lib/evidence.ts";
+import { computeSignals, type AgentView } from "./lib/signals.ts";
 
 type Any = Record<string, any>;
 type Link = Any & {
@@ -30,11 +35,16 @@ type Link = Any & {
   provenance: string;
   confidence?: number;
 };
-const api = async <T,>(p: string): Promise<T> => {
-  const r = await fetch(p);
+// The recorded demo is served from static data; everything else from the API.
+let DEMO: Demo | null = null;
+const getJson = async (url: string, signal?: AbortSignal): Promise<any> => {
+  const local = DEMO ? demoRoute(DEMO, url) : undefined;
+  if (local !== undefined) return local;
+  const r = await fetch(url, { signal });
   if (!r.ok) throw Error("api");
   return r.json();
 };
+const api = <T,>(p: string): Promise<T> => getJson(p);
 const arr = (x: any): any[] =>
   Array.isArray(x)
     ? x
@@ -98,11 +108,10 @@ async function loadAllEvents(sessionId: string, signal: AbortSignal) {
   for (let page = 0; page < maxPages; page++) {
     const query = new URLSearchParams({ limit: String(size) });
     if (after !== undefined) query.set("afterSequence", String(after));
-    const r = await fetch(`/api/sessions/${sessionId}/events?${query}`, {
-      signal,
-    });
-    if (!r.ok) throw Error("events");
-    const body = await r.json(),
+    const body = await getJson(
+        `/api/sessions/${encodeURIComponent(sessionId)}/events?${query}`,
+        signal,
+      ),
       batch = arr(body);
     all.push(...batch);
     const last = batch.at(-1),
@@ -348,19 +357,34 @@ function App() {
       ),
     [],
   );
+  const hadServer = useRef(false);
   const load = async () => {
+    let ps: any[] = [],
+      ss: any[] = [];
     try {
       const [p, s] = await Promise.all([
         api<any>("/api/projects"),
         api<any>("/api/sessions"),
       ]);
-      const ss = arr(s);
-      setProjects(arr(p));
-      setSessions(ss);
-      setSelected(
-        (o: any) => (o && ss.find((x: any) => x.id === o.id)) || ss[0] || null,
-      );
-    } catch {}
+      ps = arr(p);
+      ss = arr(s);
+      hadServer.current = true;
+    } catch {
+      // A blip while a real session is open must not swap it for the demo.
+      if (hadServer.current) return;
+    }
+    if (DEMO) {
+      ss = [...ss, DEMO.session];
+      ps = [
+        ...ps,
+        { id: "demo", name: DEMO.session.projectName, sourceKind: "demo" },
+      ];
+    }
+    setProjects(ps);
+    setSessions(ss);
+    setSelected(
+      (o: any) => (o && ss.find((x: any) => x.id === o.id)) || ss[0] || null,
+    );
   };
   // Reload the selected session's events and graph. `reset` is true when the
   // session was just opened; otherwise this is a live update and the follow
@@ -411,6 +435,10 @@ function App() {
     );
   };
   useEffect(() => {
+    loadDemo().then((d) => {
+      DEMO = d;
+      load();
+    });
     load();
     const e = new EventSource("/api/stream");
     e.onopen = () => setConnected(true);
@@ -590,6 +618,50 @@ function App() {
     [events, cursor, agents0],
   );
   const checks = checkRows.length;
+  // Signals as of the step on screen, from what the recording says up to there.
+  const facts = useMemo(
+    () => extractEvidence(events.slice(0, cursor + 1)),
+    [events, cursor],
+  );
+  const alerts = useMemo(() => {
+    const lastSummary = new Map<string, string>();
+    for (const e of events.slice(0, cursor + 1))
+      if (e.agentId && e.summary) lastSummary.set(e.agentId, e.summary);
+    const views: AgentView[] = agents.map((a: any) => ({
+      id: String(a.id),
+      name: name(a),
+      status: st(a),
+      uncertain: livenessById[String(a.id)] === "uncertain",
+      lastSignalMs: signals.get(String(a.id))?.last ?? null,
+      lastSummary: lastSummary.get(String(a.id)) ?? null,
+    }));
+    return computeSignals({
+      evidence: facts,
+      agents: views,
+      nowMs: now,
+      live: atNewest && !recorded,
+    });
+  }, [
+    facts,
+    agents,
+    livenessById,
+    signals,
+    now,
+    atNewest,
+    recorded,
+    events,
+    cursor,
+  ]);
+  const decisions = useMemo(() => describeDecisions(facts), [facts]);
+  const alertAgents = useMemo(
+    () =>
+      new Set(alerts.map((s) => s.anchor.agentId).filter(Boolean) as string[]),
+    [alerts],
+  );
+  const goToSequence = (seq: number) => {
+    const idx = events.findIndex((e: any) => e.sequence >= seq);
+    dispatch({ type: "seek", index: idx >= 0 ? idx : events.length - 1 });
+  };
   const agentWhere = useMemo(() => {
     const m = new Map<string, string>();
     for (const e of events.slice(0, cursor + 1)) {
@@ -628,6 +700,30 @@ function App() {
     );
   });
   // Learn mode: a short story from the same events and links the map draws.
+  // The baseline comparison, computed over the whole recording for the story.
+  const storyBaselines = useMemo(() => {
+    const views: AgentView[] = arr(base?.nodes).map((n: any) => ({
+      id: String(n.id),
+      name: name(n),
+      status: "done",
+      uncertain: false,
+      lastSignalMs: null,
+    }));
+    return computeSignals({
+      evidence: extractEvidence(events),
+      agents: views,
+      nowMs: 0,
+      live: false,
+      limit: 10,
+    })
+      .filter((s) => s.kind === "baseline" && s.anchor.sequence !== null)
+      .map((s) => ({
+        title: s.title,
+        fact: s.fact,
+        sequence: s.anchor.sequence as number,
+        agentId: s.anchor.agentId,
+      }));
+  }, [events, base]);
   const story = useMemo(
     () =>
       buildStory(
@@ -637,6 +733,9 @@ function App() {
           agentId: e.agentId,
           type: e.type,
           exit: e?.payload?.parsed?.exit,
+          recipes: e?.payload?.parsed?.recipes,
+          findings: e?.payload?.parsed?.findings,
+          decision: e?.payload?.parsed?.decision,
         })),
         arr(base?.nodes).map((n: any) => ({
           id: String(n.id),
@@ -651,8 +750,9 @@ function App() {
           sequenceStart: l.sequenceStart,
           sequence: l.sequence,
         })),
+        storyBaselines,
       ),
-    [events, base],
+    [events, base, storyBaselines],
   );
   const stepIndex = Math.min(storyIndex, Math.max(0, story.length - 1));
   const activeStep = lens === "learn" ? story[stepIndex] : undefined;
@@ -827,7 +927,8 @@ function App() {
             <LiveBar
               follow={follow}
               recorded={recorded}
-              connected={connected}
+              connected={connected || isDemoId(selected?.id)}
+              demo={isDemoId(selected?.id)}
               total={events.length}
               cursor={cursor}
               unseen={unseen}
@@ -855,6 +956,20 @@ function App() {
               total={agents.length}
             />
           )}
+          {selected && (
+            <SignalsPanel
+              signals={alerts}
+              decisions={decisions}
+              onStep={goToSequence}
+              onShow={(s) => {
+                if (s.anchor.sequence !== null) goToSequence(s.anchor.sequence);
+                if (s.anchor.agentId) {
+                  setSelectedAgentId(s.anchor.agentId);
+                  setRight(true);
+                }
+              }}
+            />
+          )}
           {selected &&
             (mode === "map" ? (
               <Graph
@@ -862,6 +977,7 @@ function App() {
                 agents={visibleAgents}
                 links={links}
                 liveness={livenessById}
+                alerts={alertAgents}
                 highlight={highlight}
                 zoom={zoom}
                 setZoom={setZoom}
@@ -1041,7 +1157,19 @@ function Controls(p: any) {
             type="button"
             aria-label={"Go to event " + (i + 1)}
             key={x.id || i}
-            className={i === p.cursor ? "now" : ""}
+            className={
+              (i === p.cursor ? "now " : "") +
+              (x.type === "checkpoint"
+                ? "decision"
+                : x.type === "guard.blocked"
+                  ? "guard"
+                  : "")
+            }
+            title={
+              x.type === "checkpoint" || x.type === "guard.blocked"
+                ? msg(x)
+                : undefined
+            }
             style={{
               left:
                 (p.events.length > 1 ? (100 * i) / (p.events.length - 1) : 0) +
@@ -1407,9 +1535,11 @@ function Inspect({
           )}
         </article>
       ) : null}
-      <button className="danger" onClick={remove}>
-        Delete local session
-      </button>
+      {!isDemoId(selected?.id) && (
+        <button className="danger" onClick={remove}>
+          Delete local session
+        </button>
+      )}
     </aside>
   );
 }
@@ -1438,6 +1568,7 @@ function Graph({
   onHover,
   liveness,
   highlight,
+  alerts,
 }: any) {
   const [pan, setPan] = useState({ x: 0, y: 0 }),
     [positions, setPositions] = useState<
@@ -1641,6 +1772,7 @@ function Graph({
                     : "") +
                   (active ? "selected " : "") +
                   (hovered ? "hovered " : "") +
+                  (alerts?.has(id) ? "has-signal " : "") +
                   "live-" +
                   (liveness?.[id] ?? "history") +
                   (highlight
@@ -1671,6 +1803,18 @@ function Graph({
               >
                 <circle className={st(a)} r="43" />
                 <circle className="inner" r="33" />
+                {alerts?.has(id) && (
+                  <g
+                    className="badge-wrap"
+                    transform="translate(30,-30)"
+                    aria-hidden="true"
+                  >
+                    <circle className="badge" r="11" />
+                    <text className="badge-mark" y="4" textAnchor="middle">
+                      !
+                    </text>
+                  </g>
+                )}
                 <text y="5" textAnchor="middle">
                   {name(a).slice(0, 2).toUpperCase()}
                 </text>

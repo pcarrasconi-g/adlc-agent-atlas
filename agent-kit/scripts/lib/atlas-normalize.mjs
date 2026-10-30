@@ -33,16 +33,58 @@ const GATES = [
   [/^dotnet\s+(test|build)\b/, (m) => `dotnet ${m[1]}`],
   [/^(?:mvn|\.\/gradlew|gradle)\s+(test|verify|check|build)\b/, (m) => `${/mvn/.test(m[0]) ? "mvn" : "gradle"} ${m[1]}`],
 ];
-export function gateRecipe(command) {
-  if (typeof command !== "string") return undefined;
-  for (let seg of command.split(/&&|\|\||;|\n|\|/)) {
-    seg = seg.trim().replace(/^(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)+/, "");
-    for (const [re, label] of GATES) {
-      const m = seg.match(re);
-      if (m) return label(m);
-    }
+const recipeOf = (seg) => {
+  seg = seg.trim().replace(/^(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)+/, "");
+  for (const [re, label] of GATES) {
+    const m = seg.match(re);
+    if (m) return label(m);
   }
   return undefined;
+};
+export function gateRecipe(command) {
+  if (typeof command !== "string") return undefined;
+  for (const seg of command.split(/&&|\|\||;|\n|\|/)) {
+    const r = recipeOf(seg);
+    if (r) return r;
+  }
+  return undefined;
+}
+
+const HARMLESS = /^(?:cd|echo|export|pwd|true|:)(?:\s|$)/;
+/**
+ * Which checks a Bash command runs, and whether its exit code can be read as
+ * theirs. `just lint; echo "exit=$?"` always exits 0, `just lint | tail` exits
+ * with tail's code: in those cases the result is unknown, never "passed".
+ */
+export function analyzeCommand(command) {
+  if (typeof command !== "string") return { recipes: [], simple: false };
+  const recipes = [...new Set(command.split(/&&|\|\||;|\n|\|/).map(recipeOf).filter(Boolean))];
+  if (!recipes.length) return { recipes, simple: false };
+  const masked = /;|\|\||\||\n|`|\$\(|&\s*$/.test(command);
+  const others = command.split("&&").map((s) => s.trim()).filter((s) => s && !recipeOf(s));
+  const simple = !masked && others.every((s) => HARMLESS.test(s));
+  return { recipes, simple };
+}
+
+/** Number of findings in a check's output ("5 problems", "3 errors"); a count only, never text. */
+export function countFindings(text) {
+  if (typeof text !== "string") return undefined;
+  // "file.ts:3  error" is a line number, not a count.
+  const m = text.match(/(?<![:\w.])(\d{1,6})\s+(?:problems?|errors?|failures?|failed|issues?|violations?)\b/i);
+  return m ? Number(m[1]) : undefined;
+}
+
+const argOf = (s, name) => {
+  const m = s.match(new RegExp(`--${name}\\s+(?:"([^"]*)"|'([^']*)'|(\\S+))`));
+  return m ? m[1] ?? m[2] ?? m[3] : undefined;
+};
+/** `atlas-checkpoint.mjs --phase … --decision … --reason …`: what a person or the principal chose to publish. */
+export function parseCheckpoint(command) {
+  const m = typeof command === "string" ? command.match(/atlas-checkpoint(?:\.mjs)?\s+(.*)$/s) : null;
+  if (!m) return undefined;
+  const decision = redactText(argOf(m[1], "decision"));
+  if (!decision) return undefined;
+  return { phase: redactText(argOf(m[1], "phase"), 40), decision, reason: redactText(argOf(m[1], "reason")) };
 }
 
 /** Hash of the shape of a failure's output: lets repeats be grouped without storing the output. */
@@ -58,6 +100,16 @@ export function fingerprint(text) {
   return lines.length ? sha(lines.join("\n")).slice(0, 8) : undefined;
 }
 
+const gitOf = (git, dir) => {
+  const g = typeof git === "function" && typeof dir === "string" ? git(dir) : undefined;
+  return g ? { rev: g.rev, dirty: g.dirty, repo: g.repo } : {};
+};
+// The ADLC guard runs in CLAUDE_PROJECT_DIR; remember the state of that tree.
+const rootOf = (git, env) => {
+  const g = typeof git === "function" && env.CLAUDE_PROJECT_DIR ? git(env.CLAUDE_PROJECT_DIR) : undefined;
+  return g ? { rootRev: g.rev, rootDirty: g.dirty, rootRepo: g.repo } : {};
+};
+
 const clean = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined && v !== null && v !== ""));
 
 /**
@@ -65,7 +117,7 @@ const clean = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !=
  * @param opts { receivedAt: ISO string, env: process.env-like }
  * @returns a record, or null when the event is not one Atlas stores
  */
-export function normalizeHook(payload, { receivedAt, env = {} } = {}) {
+export function normalizeHook(payload, { receivedAt, env = {}, git } = {}) {
   if (!payload || typeof payload !== "object") return null;
   const event = payload.hook_event_name;
   const session = id(payload.session_id);
@@ -91,7 +143,7 @@ export function normalizeHook(payload, { receivedAt, env = {} } = {}) {
       fields = { kind: "subagent_start", agent, agentType, ...ctx };
       break;
     case "SubagentStop":
-      fields = { kind: "subagent_stop", agent, agentType, ...ctx };
+      fields = { kind: "subagent_stop", agent, agentType, ...ctx, ...rootOf(git, env) };
       break;
     case "Stop":
       fields = { kind: "stop", agent };
@@ -102,25 +154,37 @@ export function normalizeHook(payload, { receivedAt, env = {} } = {}) {
     case "TaskCreated":
     case "TaskCompleted":
       taskId = id(String(payload.task_id ?? ""));
-      fields = { kind: event === "TaskCreated" ? "task_created" : "task_completed", taskId, task: redactText(payload.task_subject) };
+      fields = { kind: event === "TaskCreated" ? "task_created" : "task_completed", taskId, task: redactText(payload.task_subject), ...(event === "TaskCompleted" ? rootOf(git, env) : {}) };
       break;
-    case "PreToolUse":
+    case "PreToolUse": {
+      const cmd = tool === "Bash" ? analyzeCommand(input.command) : undefined;
       if (tool === "Agent") fields = { kind: "agent_launch", agent, toolUseId, task: redactText(input.description), agentType: id(input.subagent_type), isolation: id(input.isolation) };
-      else if (tool === "Bash" && gateRecipe(input.command)) fields = { kind: "gate_started", agent, toolUseId, recipe: gateRecipe(input.command), ...ctx };
+      else if (cmd?.recipes.length) fields = { kind: "gate_started", agent, toolUseId, recipe: cmd.recipes.join(" + "), complex: cmd.simple && cmd.recipes.length === 1 ? undefined : true, ...ctx };
       break;
-    case "PostToolUse":
+    }
+    case "PostToolUse": {
+      const cmd = tool === "Bash" ? analyzeCommand(input.command) : undefined;
+      const duration = Number.isFinite(payload.duration_ms) ? payload.duration_ms : undefined;
       if (tool === "Agent") {
         const r = payload.tool_response && typeof payload.tool_response === "object" ? payload.tool_response : {};
         fields = { kind: "agent_launch_result", agent, toolUseId, child: id(r.agentId), agentType: id(r.agentType), status: id(r.status), task: redactText(input.description) };
-      } else if (tool === "Bash" && gateRecipe(input.command)) fields = { kind: "gate_finished", agent, toolUseId, recipe: gateRecipe(input.command), exit: 0, durationMs: Number.isFinite(payload.duration_ms) ? payload.duration_ms : undefined, ...ctx };
-      else if (tool) fields = { kind: "tool", agent, tool, durationMs: Number.isFinite(payload.duration_ms) ? payload.duration_ms : undefined };
+      } else if (tool === "Bash" && parseCheckpoint(input.command)) fields = { kind: "checkpoint", agent, toolUseId, ...parseCheckpoint(input.command) };
+      else if (cmd?.recipes.length) {
+        // A succeeded command exited 0; that is only the check's exit code when nothing can mask it.
+        const reliable = cmd.simple;
+        fields = { kind: "gate_finished", agent, toolUseId, recipe: cmd.recipes.join(" + "), exit: reliable ? 0 : undefined, complex: reliable ? undefined : true, durationMs: duration, ...ctx, ...gitOf(git, payload.cwd) };
+      } else if (tool) fields = { kind: "tool", agent, tool, durationMs: duration };
       break;
-    case "PostToolUseFailure":
-      if (tool === "Bash" && gateRecipe(input.command)) {
+    }
+    case "PostToolUseFailure": {
+      const cmd = tool === "Bash" ? analyzeCommand(input.command) : undefined;
+      if (cmd?.recipes.length) {
         const m = typeof payload.error === "string" ? payload.error.match(/^Exit code (\d+)/) : null;
-        fields = { kind: "gate_finished", agent, toolUseId, recipe: gateRecipe(input.command), exit: m ? Number(m[1]) : undefined, interrupted: payload.is_interrupt === true ? true : undefined, fingerprint: fingerprint(payload.error), durationMs: Number.isFinite(payload.duration_ms) ? payload.duration_ms : undefined, ...ctx };
+        const reliable = cmd.simple && cmd.recipes.length === 1;
+        fields = { kind: "gate_finished", agent, toolUseId, recipe: cmd.recipes.join(" + "), exit: reliable && m ? Number(m[1]) : undefined, complex: reliable ? undefined : true, interrupted: payload.is_interrupt === true ? true : undefined, fingerprint: fingerprint(payload.error), findings: countFindings(payload.error), durationMs: Number.isFinite(payload.duration_ms) ? payload.duration_ms : undefined, ...ctx, ...gitOf(git, payload.cwd) };
       } else if (tool) fields = { kind: "tool", agent, tool, failed: true };
       break;
+    }
     default:
       break;
   }

@@ -199,3 +199,69 @@ test("the generated settings add Atlas hooks only, with bounded timeouts", () =>
     assert.doesNotMatch(h.command, /verify-guard|stop-guard/);
   }
 });
+
+// ---- Increment 3: honest results, git context, guard feedback, checkpoints
+
+import { analyzeCommand, countFindings, parseCheckpoint } from "../scripts/lib/atlas-normalize.mjs";
+import { scanTranscripts, parseGuardFeedback } from "../scripts/lib/atlas-store.mjs";
+import { appendFileSync } from "node:fs";
+
+test("a chained command never reports a check as passed or failed", () => {
+  assert.equal(analyzeCommand("just lint").simple, true);
+  assert.equal(analyzeCommand("cd app && just lint").simple, true);
+  assert.equal(analyzeCommand('just typecheck; echo "exit=$?"; just lint').simple, false);
+  assert.equal(analyzeCommand("just lint | tail -5").simple, false);
+  const masked = hook({ hook_event_name: "PostToolUse", tool_name: "Bash", tool_use_id: "m1", tool_input: { command: 'just lint; echo "exit=$?"' }, tool_response: { stdout: "exit=1" } });
+  assert.equal(masked.exit, undefined, "exit 0 of the echo is not the check's exit code");
+  assert.equal(masked.complex, true);
+  const failedPipe = hook({ hook_event_name: "PostToolUseFailure", tool_name: "Bash", tool_use_id: "m2", tool_input: { command: "just lint | tail" }, error: "Exit code 1\nx" });
+  assert.equal(failedPipe.exit, undefined);
+  const s = buildSession([masked]);
+  assert.match(s.transcript.at(-1).parsed.summary, /unknown result/);
+});
+
+test("finding counts and git context are numbers and flags, never text", () => {
+  assert.equal(countFindings("a\n✖ 5 problems (5 errors, 0 warnings)"), 5);
+  assert.equal(countFindings("all good"), undefined);
+  const git = (dir) => ({ rev: "abc123def456", dirty: dir.includes("worktrees"), repo: "r1" });
+  const base = { hook_event_name: "PostToolUseFailure", tool_name: "Bash", tool_input: { command: "just lint" }, error: "Exit code 1\n✖ 5 problems" };
+  const a = normalizeHook({ session_id: S, tool_use_id: "g1", cwd: "/w/proj", ...base }, { receivedAt: t(1), env: {}, git });
+  const b = normalizeHook({ session_id: S, tool_use_id: "g2", cwd: "/w/proj/.claude/worktrees/agent-a", ...base }, { receivedAt: t(2), env: {}, git });
+  assert.deepEqual([a.findings, a.rev, a.dirty, a.repo], [5, "abc123def456", false, "r1"]);
+  assert.equal(b.dirty, true);
+  assert.equal(b.worktree, "agent-a");
+});
+
+const feedback = (extra = "") => `TaskCompleted hook feedback:\n[bash /x/hooks/verify-guard.sh taskcompleted]: Verification failed before completion — fix these, then finish:\n--- just lint failed ---\nnode tools/lint.mjs\nlegacy/orders.ts:3  error  no-var\n\n✖ 5 problems (5 errors, 0 warnings)\n--- just test failed ---\n2 failures${extra}`;
+
+test("the ADLC guard's message is read from the transcript as recipes and counts only", () => {
+  const p = parseGuardFeedback(feedback());
+  assert.deepEqual(p.recipes, ["lint", "test"]);
+  assert.deepEqual(p.findings, { lint: 5, test: 2 });
+  assert.equal(p.mode, "taskcompleted");
+  const out = mkdtempSync(path.join(tmpdir(), "atlas-"));
+  const file = path.join(out, "session.jsonl");
+  const line = (o) => `${JSON.stringify(o)}\n`;
+  writeFileSync(file, line({ type: "assistant", message: { content: [{ type: "text", text: `The guard said: ${feedback()}` }] } }) + line({ type: "user", timestamp: t(7), message: { content: [{ type: "tool_result", content: feedback() }] } }));
+  const root = { rootRev: "abc", rootDirty: false, rootRepo: "r1" };
+  assert.deepEqual(scanTranscripts(out, S, { event: "PostToolUse", paths: [file], root }), [], "nothing is looked for until a completion was requested");
+  const found = scanTranscripts(out, S, { event: "TaskCompleted", paths: [file], root, now: Date.now() });
+  assert.equal(found.length, 1, "the model quoting the message is not a second block");
+  assert.deepEqual([found[0].kind, found[0].at, found[0].rootRev], ["guard_blocked", t(7), "abc"]);
+  assert.ok(!JSON.stringify(found).includes("no-var"), "output text is not kept");
+  assert.deepEqual(scanTranscripts(out, S, { event: "Stop", paths: [file], root }), [], "already seen");
+  appendFileSync(file, line({ type: "user", timestamp: t(9), message: { content: [{ type: "tool_result", content: feedback() }] } }));
+  assert.equal(scanTranscripts(out, S, { event: "Stop", paths: [file], root }).length, 1, "a second block is a second record");
+  const s = buildSession([...found, hook({ hook_event_name: "SessionEnd" }, 20)]);
+  assert.match(s.transcript[0].parsed.summary, /ADLC guard blocked completion: just lint, just test failed \(lint: 5, test: 2 findings\)/);
+});
+
+test("a published decision is recorded from the command line, redacted", () => {
+  assert.deepEqual(parseCheckpoint(`node /x/atlas-checkpoint.mjs --phase execute --decision "Limit the guard to typecheck" --reason 'lint is baseline token=${SECRET}'`), { phase: "execute", decision: "Limit the guard to typecheck", reason: "lint is baseline token=[redacted]" });
+  assert.equal(parseCheckpoint("node atlas-checkpoint.mjs --phase x"), undefined);
+  const r = hook({ hook_event_name: "PostToolUse", tool_name: "Bash", tool_use_id: "c1", tool_input: { command: 'node a/atlas-checkpoint.mjs --decision "Use typecheck only" --reason "baseline"' }, tool_response: { stdout: "ok" } });
+  assert.equal(r.kind, "checkpoint");
+  const s = buildSession([r]);
+  assert.match(s.transcript[0].parsed.summary, /Decision: Use typecheck only/);
+  assert.equal(s.transcript[0].parsed.event, "checkpoint");
+});

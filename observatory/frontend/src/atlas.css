@@ -81,3 +81,42 @@ button.present:focus-visible, .copy:focus-visible { outline: 3px solid #5368ed; 
 details.evidence-block { margin-top: 8px; }
 details.evidence-block > summary { cursor: pointer; font-weight: 700; }
 .lens-panel.diagnose { max-height: 46vh; }
+
+/* Signals */
+details.signals { margin: 4px 0; }
+details.signals > summary { cursor: pointer; font-weight: 700; font-size: 13px; }
+.signal-list { display: grid; gap: 6px; max-height: 32vh; overflow: auto; padding: 6px 2px; }
+.signal { background: #fff; border: 1px solid #e5e8ef; border-left: 4px solid #8290a7; border-radius: 10px; padding: 8px 12px; font-size: 12.5px; }
+.signal.context { border-left-color: #b4540a; }
+.signal.baseline { border-left-color: #5b3fa8; }
+.signal.repeated { border-left-color: #b4540a; }
+.signal.stale { border-left-color: #8290a7; border-left-style: dashed; }
+.signal.decision { border-left-color: #183883; background: #f5f8ff; }
+.signal .signal-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.signal .signal-head .mark { font-size: 14px; }
+.signal p { margin: 4px 0; line-height: 1.4; }
+.signal .conf { font: 10.5px "DM Mono"; padding: 2px 7px; border-radius: 10px; border: 1px solid #d3d8e2; background: #eef0f4; color: #4d586c; }
+.signal .conf.high { background: #e8f5ee; color: #1f6f43; border-color: #b9dfca; }
+.signal .conf.medium { background: #fff4dc; color: #8a5a00; border-color: #efd69b; }
+.compare { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 6px 0; }
+.compare > div { border: 1px solid #e5e8ef; border-radius: 8px; padding: 6px 8px; background: #fafbfd; display: grid; gap: 2px; }
+.compare small { font: 10px "DM Mono"; color: #7b8699; }
+.compare span { color: #5b6577; }
+.signal-actions { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0; }
+.signal-actions button, .signal button.link { font-size: 12px; border: 1px solid #d5dae6; border-radius: 8px; background: #fff; padding: 3px 8px; }
+.signal button.link { border: 0; background: none; color: #24449e; text-decoration: underline; }
+.signal details summary { cursor: pointer; font-size: 12px; color: #5b6577; }
+.signal ul { margin: 4px 0 0; padding-left: 18px; }
+
+/* Timeline markers and node badges */
+.controls .range button.decision { background: #183883; border-radius: 2px; transform: rotate(45deg); }
+.controls .range button.guard { background: #b4540a; }
+.graph g .badge { fill: #b4540a; stroke: #fff; stroke-width: 2; }
+.graph g text.badge-mark { fill: #fff; font-size: 12px; stroke: none; }
+.graph g.has-signal circle:first-child { stroke-dasharray: none; }
+
+.signal > details > summary.signal-head { list-style: none; cursor: pointer; }
+.signal > details > summary.signal-head::-webkit-details-marker { display: none; }
+.signal > details > summary.signal-head::before { content: "▸"; color: #7b8699; }
+.signal > details[open] > summary.signal-head::before { content: "▾"; }
+.signal details.ev { margin-top: 2px; }

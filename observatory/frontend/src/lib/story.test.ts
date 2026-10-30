@@ -134,6 +134,46 @@ test("steps that lack evidence are omitted: a sequential run has no 'parallel' s
   assert.ok(!steps.some((s) => s.id === "parallel"));
 });
 
+test("the guard, the baseline and the decision become steps, and the story stays within six", () => {
+  const withGuard: StoryEvent[] = [
+    ...events,
+    {
+      sequence: 10,
+      agentId: "p",
+      status: "working",
+      type: "guard.blocked",
+      recipes: ["lint"],
+    },
+    {
+      sequence: 11,
+      agentId: "p",
+      status: "working",
+      type: "checkpoint",
+      decision: "Limit the guard to typecheck",
+    },
+  ];
+  const baselines = [
+    {
+      title: "just lint fails the same way as at baseline",
+      fact: "just lint failed at baseline and fails the same way now.",
+      sequence: 5,
+      agentId: "a1",
+    },
+  ];
+  const steps = buildStory(withGuard, nodes, links, baselines);
+  assert.ok(steps.length <= 6, steps.map((s) => s.id).join());
+  const ids = steps.map((s) => s.id);
+  for (const id of ["baseline", "guard", "decision", "verification"])
+    assert.ok(ids.includes(id), id);
+  assert.deepEqual(ids.slice(-3), ["guard", "decision", "verification"]);
+  const decision = steps.find((s) => s.id === "decision")!;
+  assert.equal(decision.provenance, "declared");
+  assert.match(decision.body, /Limit the guard to typecheck/);
+  assert.match(decision.body, /absence of a new block is not proof/);
+  assert.equal(steps.find((s) => s.id === "guard")!.provenance, "observed");
+  assert.match(steps.find((s) => s.id === "guard")!.body, /just lint failed/);
+});
+
 test("no events, no story", () => {
   assert.deepEqual(buildStory([], nodes, links), []);
 });

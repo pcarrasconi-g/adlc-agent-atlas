@@ -1,0 +1,8 @@
+# Recipes the ADLC verification guard looks for.
+lint:
+    node tools/lint.mjs
+
+typecheck:
+    node tools/typecheck.mjs
+
+test: typecheck

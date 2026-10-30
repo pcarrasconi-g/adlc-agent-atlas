@@ -26,6 +26,8 @@ export function buildSession(records, { title } = {}) {
   const meta = (agent) => registered.get(agent) || {};
   const identity = (agent, extra) => ({ event: "agent_registered", profile: agent.type, displayName: agent.type, provider: PROVIDER, evidenceLevel: "host-recorded", ...extra });
   const where = (r) => ({ worktree: r.worktree, cwd: r.cwd, projectDir: r.projectDir });
+  const tree = (r) => ({ rev: r.rev, dirty: r.dirty, repo: r.repo });
+  const root = (r) => ({ rootRev: r.rootRev, rootDirty: r.rootDirty, rootRepo: r.rootRepo, rootCwd: r.rootCwd });
 
   for (const r of recs) {
     const actor = r.agent || session;
@@ -76,16 +78,25 @@ export function buildSession(records, { title } = {}) {
         break;
       case "gate_finished": {
         // The agent is not marked failed because a check failed: that is a fact about the check.
-        const result = r.interrupted ? "was interrupted" : r.exit === undefined ? "ended with an unknown result" : r.exit === 0 ? "passed" : `failed (exit ${r.exit})`;
-        add(actor, r.at, { event: "gate.finished", status: "working", summary: `Check ${r.recipe} ${result}`, recipe: r.recipe, exit: r.exit, interrupted: r.interrupted, fingerprint: r.fingerprint, durationMs: r.durationMs, ...where(r) });
+        const result = r.interrupted ? "was interrupted" : r.exit === undefined ? "ended with an unknown result (a chained command hides the exit code)" : r.exit === 0 ? "passed" : `failed (exit ${r.exit}${r.findings !== undefined ? `, ${r.findings} findings` : ""})`;
+        add(actor, r.at, { event: "gate.finished", status: "working", summary: `Check ${r.recipe} ${result}`, recipe: r.recipe, exit: r.exit, complex: r.complex, interrupted: r.interrupted, fingerprint: r.fingerprint, findings: r.findings, durationMs: r.durationMs, ...where(r), ...tree(r) });
+        break;
+      }
+      case "guard_blocked": {
+        const n = Object.entries(r.findings ?? {}).map(([k, v]) => `${k}: ${v}`).join(", ");
+        add(actor, r.at, { event: "guard.blocked", status: "working", summary: `ADLC guard blocked completion: ${(r.recipes ?? []).map((x) => `just ${x}`).join(", ") || "verification"} failed${n ? ` (${n} findings)` : ""}`, recipes: r.recipes, findings: r.findings, mode: r.mode, ...root(r) });
+        break;
+      }
+      case "checkpoint": {
+        add(actor, r.at, { event: "checkpoint", status: "working", summary: `Decision${r.phase ? ` (${r.phase})` : ""}: ${r.decision}`, phase: r.phase, decision: r.decision, reason: r.reason });
         break;
       }
       case "subagent_stop":
-        add(r.agent, r.at, { status: "done", summary: "Stopped (result text not stored)", ...where(r) });
+        add(r.agent, r.at, { status: "done", summary: "Stopped (result text not stored)", ...where(r), ...root(r) });
         break;
       case "task_created":
       case "task_completed":
-        add(session, r.at, { event: r.kind === "task_created" ? "task.created" : "task.completed", status: "working", summary: `${r.kind === "task_created" ? "Task created" : "Task completed"}: ${r.task ?? r.taskId ?? ""}`, taskId: r.taskId });
+        add(session, r.at, { event: r.kind === "task_created" ? "task.created" : "task.completed", status: "working", summary: `${r.kind === "task_created" ? "Task created" : "Task completion requested"}: ${r.task ?? r.taskId ?? ""}`, taskId: r.taskId, ...root(r) });
         break;
       case "stop":
         if (!r.agent) add(session, r.at, { status: "done", summary: "Principal finished its turn" });

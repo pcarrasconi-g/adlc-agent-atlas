@@ -15,6 +15,9 @@ export type StoryEvent = {
   agentId?: string | null;
   type?: string | null;
   exit?: number | null;
+  recipes?: string[];
+  findings?: Record<string, number>;
+  decision?: string;
 };
 export type StoryNode = { id: string; name: string; isPrincipal?: boolean };
 export type StoryLink = {
@@ -46,6 +49,12 @@ export function buildStory(
   events: StoryEvent[],
   nodes: StoryNode[],
   links: StoryLink[],
+  baselines: {
+    title: string;
+    fact: string;
+    sequence: number;
+    agentId: string | null;
+  }[] = [],
 ): StoryStep[] {
   if (!events.length) return [];
   const ordered = [...events].sort((a, b) => a.sequence - b.sequence);
@@ -140,7 +149,49 @@ export function buildStory(
     break; // one is enough to teach the idea
   }
 
-  // 5. What was actually verified.
+  // 5. A check that was already failing, compared with an earlier measurement.
+  for (const b of baselines.slice(0, 1)) {
+    steps.push({
+      id: "baseline",
+      title: b.title,
+      body: `${b.fact} Atlas only compares against an earlier measurement of the same check on a clean tree at the same revision; without one it says the origin is undetermined instead of guessing.`,
+      sequence: b.sequence,
+      agents: b.agentId ? [b.agentId] : [],
+      links: [],
+      provenance: "inferred",
+    });
+  }
+
+  // 6. The ADLC completion guard blocking, and a person deciding.
+  const block = ordered.find((e) => e.type === "guard.blocked");
+  if (block) {
+    const recipes =
+      (block.recipes ?? []).map((r) => `just ${r}`).join(", ") ||
+      "its verification";
+    steps.push({
+      id: "guard",
+      title: "The completion guard blocks",
+      body: `ADLC's guard refused to let the task complete because ${recipes} failed. It runs from the project root, so what it checked may not include the agent's changes. Whether the failure comes from this change is a separate question.`,
+      sequence: block.sequence,
+      agents: block.agentId ? [block.agentId] : [],
+      links: [],
+      provenance: "observed",
+    });
+  }
+  const decision = ordered.find((e) => e.type === "checkpoint");
+  if (decision) {
+    steps.push({
+      id: "decision",
+      title: "A person decides in Claude Code",
+      body: `A decision was published: “${decision.decision ?? "see the checkpoint"}”. Atlas shows what it observed before and after; it does not judge the decision, and the absence of a new block is not proof the work was accepted.`,
+      sequence: decision.sequence,
+      agents: decision.agentId ? [decision.agentId] : [],
+      links: [],
+      provenance: "declared",
+    });
+  }
+
+  // 7. What was actually verified.
   const checks = ordered.filter(isCheck);
   const failed = checks.filter(
     (e) => typeof e.exit === "number" && e.exit !== 0,
@@ -170,5 +221,12 @@ export function buildStory(
         },
   );
 
+  // A story is four to six steps: drop the least essential until it fits.
+  for (const id of ["parallel", "confirm:", "result"])
+    while (steps.length > 6) {
+      const i = steps.findIndex((s) => s.id.startsWith(id));
+      if (i < 0) break;
+      steps.splice(i, 1);
+    }
   return steps.sort((a, b) => a.sequence - b.sequence);
 }
