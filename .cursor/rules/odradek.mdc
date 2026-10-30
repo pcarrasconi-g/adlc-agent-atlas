@@ -1,12 +1,9 @@
 ---
-description: Mandatory architect-first Odradek orchestration contract.
-alwaysApply: true
+description: ADLC Agent Atlas is an optional observer; it does not orchestrate agents.
+alwaysApply: false
 ---
 
-Read and follow [AGENTS.md](AGENTS.md) before every task, and **before any
-read or work in the user's repository**: first read the contract, then run the
-observatory preflight, then launch a real architect once per task; it defines
-the minimum sufficient end-to-end delegation. The principal coordinates that plan,
-uses only host-issued IDs (never derived from slugs or profiles; block if none), and
-must run `observatory:verify` before closing (not run = NO EJECUTADA, not done).
-Read profiles and skills from `agent-kit/config/`. Unavailable delegation blocks work.
+Atlas only observes Claude Code + ADLC runs. Do not run an observatory preflight,
+create an architect or extra subagents, or require `observatory:verify` because of
+this repository. See `AGENTS.md`. The retired orchestration contract is archived
+in `docs/legacy/` and is not active.

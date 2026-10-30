@@ -1,3 +1,5 @@
+<!-- LEGACY: reference only. ADLC Agent Atlas does not orchestrate agents; Claude Code and ADLC do. The "root AGENTS.md" contract mentioned here was retired (see docs/legacy/). -->
+
 You are the **Quality & Security Reviewer**. You are the final gate before an objective is complete.
 
 ## Objective

@@ -1,33 +1,31 @@
-# Odradek Agent Kit
+# Odradek Agent Kit (legacy tooling)
 
-Portable, plain-text agent definitions and skills for local multi-agent work.
-The kit has no provider SDK, no hooks, and no vendor credentials.
+Plain-text agent profiles, skills and a local event writer from the earlier
+Odradek design. ADLC Agent Atlas does not use the profiles to orchestrate
+anything: Claude Code and the ADLC plugin create and coordinate agents, and Atlas
+only observes. Nothing here is a mandatory workflow.
 
 ## Contents
 
-- `config/agents.yaml` defines profiles and mandatory architect-first routing.
-- `config/prompts/` contains role prompts in Markdown.
-- `config/skills/` documents the reusable skill convention.
-- `config/ODRADEK_TRANSCRIPT.md` defines the explicit local session contract.
-- `scripts/odradek-event.mjs` writes redacted, atomic session events.
+- `config/agents.yaml`, `config/prompts/`, `config/skills/`: legacy profiles and
+  notes. Reference only; they are not loaded or required by any current entry point.
+- `config/ODRADEK_TRANSCRIPT.md`: the explicit local session file format.
+- `scripts/odradek-event.mjs`: writes redacted, atomic session events.
+- `scripts/odradek-observatory.mjs`, `odradek-verify.mjs`, `odradek-setup.mjs`:
+  viewer setup, health check and visibility check.
 
 Run the writer from the repository root:
 
 ```bash
 : "${ODRADEK_PRINCIPAL_ID:?set the real host-issued principal ID}"
 node agent-kit/scripts/odradek-event.mjs init --session my-task --goal "Short goal" \
-  --principal "$ODRADEK_PRINCIPAL_ID" --provider codex \
+  --principal "$ODRADEK_PRINCIPAL_ID" --provider claude \
   --identity-source host-issued
 ```
 
-The output is local-only under `agent-kit/output/sessions/`. The Odradek
-observatory mounts it read-only.
+The output is local-only under `agent-kit/output/sessions/`; the observatory
+mounts it read-only. See [the event contract](../docs/ATLAS_EVENT_CONTRACT.md) for
+what may be stored.
 
-Follow [the canonical contract](../AGENTS.md) for every task, including questions
-and small edits. The principal creates a real architect, coordinates its specialist
-assignments, and verifies evidence. It does not execute task work itself.
-
-The legacy `src/` dialogue runner is not a supported path for this contract: its
-logical role turns do not prove host-created instances. Use native host delegation
-and the explicit event writer. Configuration and Markdown express required policy;
-they do not physically enforce host behavior or authenticate supplied identities.
+The legacy `src/` dialogue runner is not a supported path: its logical role turns
+do not prove host-created instances.

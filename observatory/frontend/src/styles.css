@@ -10,7 +10,7 @@ header{gap:9px}
 header b{font-size:0;display:inline-flex;align-items:center;gap:5px}
 header b::before{content:'';display:inline-block;width:36px;height:36px;border:1px solid #cbd8fb;border-radius:10px;background:#f5f8ff url('/branding/odradek-light.png') center/100% no-repeat;line-height:1;transition:background .18s ease,transform .18s ease}
 header b:hover::before{background-color:#0d2076;background-image:url('/branding/odradek-dark.png');transform:rotate(-4deg)}
-header b::after{content:'Odradek';font-size:20px;font-weight:800;color:#183883;letter-spacing:-.025em}
+header b::after{content:'ADLC Agent Atlas';font-size:20px;font-weight:800;color:#183883;letter-spacing:-.025em}
 header small{font-size:0}
-header small::after{content:'observatorio de hilos';font:11px 'DM Mono';color:#8290a7}
+header small::after{content:'local agent map';font:11px 'DM Mono';color:#8290a7}
 .project{display:flex;align-items:center;gap:7px}.project::before{content:'';width:16px;height:16px;flex:none;background:url('/branding/odradek-transparent.png') center/contain no-repeat;opacity:.85}

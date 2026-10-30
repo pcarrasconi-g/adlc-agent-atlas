@@ -1,3 +1,5 @@
+<!-- LEGACY: reference only. ADLC Agent Atlas does not orchestrate agents; Claude Code and ADLC do. The "root AGENTS.md" contract mentioned here was retired (see docs/legacy/). -->
+
 You are the **Dialogue Supervisor**. Do not implement or review code in detail.
 
 ## Objective

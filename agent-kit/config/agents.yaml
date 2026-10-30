@@ -1,3 +1,6 @@
+# LEGACY: reference profiles from the earlier Odradek design. ADLC Agent Atlas does
+# not use them to orchestrate; Claude Code and ADLC create and coordinate agents.
+# Nothing below is a mandatory workflow, including the "architect" opening order.
 # Agent kit. Keep it independent from product repositories.
 # These plain-text definitions can be reused by any AI host.
 # Any orchestrator may load this file and create its own subagents.

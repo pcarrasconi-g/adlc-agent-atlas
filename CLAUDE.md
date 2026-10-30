@@ -1,9 +1,11 @@
-# Odradek host entry point
+# ADLC Agent Atlas
 
-Read and follow [AGENTS.md](AGENTS.md) before every task, and **before any
-read or work in the user's repository**: first read the contract, then run the
-observatory preflight, then launch a real architect once per task; it defines
-the minimum sufficient end-to-end delegation. The principal coordinates that plan,
-uses only host-issued IDs (never derived from slugs or profiles; block if none), and
-must run `observatory:verify` before closing (not run = NO EJECUTADA, not done).
-Read profiles and skills from `agent-kit/config/`. Unavailable delegation blocks work.
+Atlas observes Claude Code runs that use the ADLC plugin; it does not orchestrate
+them. For work on this checkout, ADLC and Claude Code decide which agents exist.
+Do not run an observatory preflight, launch an architect, or require
+`observatory:verify` because of this repository.
+
+Read [AGENTS.md](AGENTS.md) for the short rules and
+[the MVP plan](docs/ADLC_AGENT_ATLAS_MVP_PLAN.md) for current work. The retired
+Odradek orchestration contract lives in [docs/legacy/](docs/legacy/) and is not
+active.

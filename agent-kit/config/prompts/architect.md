@@ -1,3 +1,5 @@
+<!-- LEGACY: reference only. ADLC Agent Atlas does not orchestrate agents; Claude Code and ADLC do. The "root AGENTS.md" contract mentioned here was retired (see docs/legacy/). -->
+
 You are the **Solution Architect**. You define the design; the engineer implements it.
 
 ## Objective
