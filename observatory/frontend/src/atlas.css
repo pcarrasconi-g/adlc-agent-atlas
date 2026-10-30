@@ -120,3 +120,84 @@ details.signals > summary { cursor: pointer; font-weight: 700; font-size: 13px; 
 .signal > details > summary.signal-head::before { content: "▸"; color: #7b8699; }
 .signal > details[open] > summary.signal-head::before { content: "▾"; }
 .signal details.ev { margin-top: 2px; }
+
+/* ---- Responsive layout (all widths) ----
+   The page scrolls inside the work column instead of squeezing the map, the map
+   keeps a usable height, the playback bar stays reachable, and the zoom control
+   lives with the map instead of floating over other bars. */
+.work { overflow-x: hidden; overflow-y: auto; }
+.stage { position: relative; flex: 1 0 340px; display: flex; flex-direction: column; min-height: 340px; }
+.stage .graph, .stage .cards { flex: 1; }
+.stage .zoom { position: absolute; top: 8px; right: 8px; }
+.controls { position: sticky; bottom: 0; z-index: 3; }
+.top { flex-wrap: wrap; gap: 8px 12px; }
+.top > div { min-width: 0; }
+.top h1 { overflow-wrap: anywhere; }
+.signal-list { max-height: 26vh; }
+button, .filters input, .filters select { min-height: 30px; }
+
+@media (max-width: 1000px) {
+  .layout { height: calc(100vh - 58px); }
+  .open { display: block; position: fixed; top: 66px; right: 10px; z-index: 5; box-shadow: 0 2px 8px rgba(27, 39, 72, 0.12); }
+  .right { z-index: 6; }
+  .work { padding: 0 16px; }
+  .controls { margin-left: -16px; margin-right: -16px; }
+}
+
+@media (max-width: 680px) {
+  header { gap: 8px; padding: 0 12px; }
+  header small, header span { display: none; }
+  .layout { display: block; height: auto; }
+  .left { height: auto; display: flex; gap: 8px; align-items: stretch; overflow-x: auto; overflow-y: hidden; padding: 8px 12px; border-width: 0 0 1px 0; }
+  .left h4, .left input, .left .project { display: none; }
+  .left .session { flex: 0 0 min(240px, 70vw); }
+  .work { height: auto; overflow: visible; padding: 0 12px; }
+  .top { min-height: 0; padding: 8px 0 0; }
+  .top h1 { font-size: 16px; }
+  .top > div:last-child { display: flex; flex-wrap: wrap; gap: 6px; }
+  .lens, .view { margin-left: 0; }
+  .stage { flex: none; min-height: 0; height: 56vh; }
+  .stage .cards { overflow: auto; }
+  .lens-panel, .signal-list { max-height: none; }
+  .compare { grid-template-columns: 1fr; }
+  .controls { margin-left: -12px; margin-right: -12px; }
+  .filters input { flex: 1 1 140px; }
+  .livebar { gap: 6px; }
+  .signal .signal-head { gap: 6px; }
+  .zoom { top: auto; }
+  .open { top: 64px; }
+}
+
+@media (max-width: 420px) {
+  .stage { height: 50vh; }
+  .brief, .signal p { font-size: 13px; }
+}
+
+@media (pointer: coarse) {
+  button, .filters input, .filters select, summary { min-height: 40px; }
+  .controls .range button { min-height: 0; }
+}
+
+.controls .range button { min-height: 0; }
+
+/* children of the work column keep their size; the column scrolls instead */
+.work > * { flex-shrink: 0; }
+
+@media (max-width: 1000px) {
+  .top { padding-right: 84px; } /* room for the Details button when the drawer is closed */
+}
+@media (max-width: 680px) {
+  .top { padding-right: 76px; }
+}
+
+@media (max-width: 680px) {
+  .controls { position: static; }       /* on a phone the bar should not cover the map */
+  .open { top: 11px; }                  /* the Details button sits in the header */
+  .top { padding-right: 0; }
+  .stage .zoom { top: 6px; right: 6px; padding: 2px; }
+  .stage .zoom button { min-height: 32px; }
+}
+
+/* The map scales to its container (it was a fixed 900x520), but never below a size
+   where labels stay readable; on a phone it is centred and can be panned. */
+.graph svg { width: 100%; height: 100%; min-width: 560px; }

@@ -435,6 +435,7 @@ const CONF_LABEL = {
 } as const;
 
 export function SignalsPanel(p: {
+  initiallyOpen?: boolean;
   signals: Signal[];
   decisions: DecisionView[];
   onShow: (s: Signal) => void;
@@ -450,7 +451,7 @@ export function SignalsPanel(p: {
     } catch {}
   };
   return (
-    <details className="signals" open>
+    <details className="signals" open={p.initiallyOpen !== false}>
       <summary>
         Signals ({p.signals.length})
         {p.decisions.length

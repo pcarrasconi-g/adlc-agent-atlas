@@ -339,7 +339,13 @@ function App() {
     [agentQuery, setAgentQuery] = useState(""),
     [statusFilter, setStatusFilter] = useState<string[]>([]),
     [phase, setPhase] = useState(""),
-    [right, setRight] = useState(true),
+    // On a narrow screen the details drawer starts closed so it does not cover the map.
+    [right, setRight] = useState(
+      () =>
+        typeof window === "undefined" ||
+        !window.matchMedia ||
+        !window.matchMedia("(max-width: 1000px)").matches,
+    ),
     [selectedAgentId, setSelectedAgentId] = useState<string | null>(null),
     [hoverAgentId, setHoverAgentId] = useState<string | null>(null),
     [connected, setConnected] = useState(true),
@@ -958,6 +964,11 @@ function App() {
           )}
           {selected && (
             <SignalsPanel
+              initiallyOpen={
+                typeof window === "undefined" ||
+                !window.matchMedia ||
+                !window.matchMedia("(max-width: 680px)").matches
+              }
               signals={alerts}
               decisions={decisions}
               onStep={goToSequence}
@@ -970,52 +981,75 @@ function App() {
               }}
             />
           )}
-          {selected &&
-            (mode === "map" ? (
-              <Graph
-                sessionId={selected.id}
-                agents={visibleAgents}
-                links={links}
-                liveness={livenessById}
-                alerts={alertAgents}
-                highlight={highlight}
-                zoom={zoom}
-                setZoom={setZoom}
-                current={cur}
-                selectedAgentId={selectedAgentId}
-                hoverAgentId={hoverAgentId}
-                onSelect={selectAgent}
-                onHover={setHoverAgentId}
-              />
-            ) : (
-              <div className="cards">
-                {agents.map((a) => (
-                  <article
-                    key={a.id}
-                    className={
-                      selectedAgentId === String(a.id) ? "agent-selected" : ""
-                    }
-                    tabIndex={0}
-                    role="button"
-                    aria-current={
-                      selectedAgentId === String(a.id) ? "true" : undefined
-                    }
-                    onClick={() => selectAgent(String(a.id))}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        selectAgent(String(a.id));
-                      }
-                    }}
-                  >
-                    <Pill v={st(a)} />
-                    <h3>{name(a)}</h3>
-                    <p title={a.task || ""}>{a.task || "Task not recorded"}</p>
-                    <Topology agent={a} agents={agents} />
-                  </article>
-                ))}
+          {selected && (
+            <div className="stage">
+              <div className="zoom">
+                <button
+                  aria-label="Zoom out map"
+                  onClick={() => setZoom((z: number) => cap(z - 0.15))}
+                >
+                  −
+                </button>
+                {Math.round(zoom * 100)}%
+                <button
+                  aria-label="Zoom in map"
+                  onClick={() => setZoom((z: number) => cap(z + 0.15))}
+                >
+                  +
+                </button>
+                <button aria-label="Reset zoom" onClick={() => setZoom(1)}>
+                  Fit
+                </button>
               </div>
-            ))}
+              {mode === "map" ? (
+                <Graph
+                  sessionId={selected.id}
+                  agents={visibleAgents}
+                  links={links}
+                  liveness={livenessById}
+                  alerts={alertAgents}
+                  highlight={highlight}
+                  zoom={zoom}
+                  setZoom={setZoom}
+                  current={cur}
+                  selectedAgentId={selectedAgentId}
+                  hoverAgentId={hoverAgentId}
+                  onSelect={selectAgent}
+                  onHover={setHoverAgentId}
+                />
+              ) : (
+                <div className="cards">
+                  {agents.map((a) => (
+                    <article
+                      key={a.id}
+                      className={
+                        selectedAgentId === String(a.id) ? "agent-selected" : ""
+                      }
+                      tabIndex={0}
+                      role="button"
+                      aria-current={
+                        selectedAgentId === String(a.id) ? "true" : undefined
+                      }
+                      onClick={() => selectAgent(String(a.id))}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          selectAgent(String(a.id));
+                        }
+                      }}
+                    >
+                      <Pill v={st(a)} />
+                      <h3>{name(a)}</h3>
+                      <p title={a.task || ""}>
+                        {a.task || "Task not recorded"}
+                      </p>
+                      <Topology agent={a} agents={agents} />
+                    </article>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
           {lens === "learn" && (
             <StoryPanel
               steps={story}
@@ -1044,24 +1078,6 @@ function App() {
               follow,
             }}
           />
-          <div className="zoom">
-            <button
-              aria-label="Zoom out map"
-              onClick={() => setZoom((z: number) => cap(z - 0.15))}
-            >
-              −
-            </button>
-            {Math.round(zoom * 100)}%
-            <button
-              aria-label="Zoom in map"
-              onClick={() => setZoom((z: number) => cap(z + 0.15))}
-            >
-              +
-            </button>
-            <button aria-label="Reset zoom" onClick={() => setZoom(1)}>
-              Fit
-            </button>
-          </div>
         </section>
         {right ? (
           <Inspect
