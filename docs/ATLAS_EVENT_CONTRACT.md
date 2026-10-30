@@ -235,3 +235,21 @@ completion guard blocks on lint from the root; a scripted person decides, in
 Claude Code, to limit the guard to typecheck; completion is asked again). The
 frozen, anonymized result is `demo/recording/adlc-guard-demo.json`, served to the
 page as `observatory/frontend/public/demo/demo.json`, which opens with no API.
+
+## 10. Adoption (Increment 4)
+
+`agent-kit/scripts/atlas-install.mjs` adds or removes the hook for one project by
+editing only `<project>/.claude/settings.local.json`, and only the entries whose
+command runs `atlas-hook.mjs`. It keeps every other key and hook (and their
+order), keeps the file's own formatting, so uninstall returns the same bytes, and
+refuses to touch a file that is not valid JSON. Options become environment
+variables of the hook command: `ATLAS_OUT_DIR`, `ATLAS_RETENTION_DAYS`,
+`ATLAS_GATE_PATTERNS` (a JSON list of `{match, label}` for checks the defaults do
+not know; a bad pattern is skipped, never fatal).
+
+Verified with real Claude Code runs, installed with this command: a project with a
+`justfile` and worktree subagents (checks recorded with exit code and worktree,
+the user's own `SubagentStop` hook still ran), and a sequential project with no
+`justfile`, no worktrees and no checks (agents and order recorded; no check, no
+signal, "not observed" in Diagnose). After uninstall a new run created or changed
+no file, and the ADLC plugin directory was byte-identical before and after.

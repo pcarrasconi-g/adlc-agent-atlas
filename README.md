@@ -11,9 +11,10 @@ It is not a chatbot, a remote control or a replacement for ADLC.
 Status: MVP in progress. Done: the event contract and trust semantics
 ([docs/ATLAS_EVENT_CONTRACT.md](docs/ATLAS_EVENT_CONTRACT.md)), the map with
 live-follow, replay and the Learn / Diagnose readings, the optional hook adapter,
-the four signals with baseline comparison, and a recorded demo. Still to come, in
-[the MVP plan](docs/ADLC_AGENT_ATLAS_MVP_PLAN.md): adoption in other projects
-(install and uninstall, two project modes).
+the four signals with baseline comparison, a recorded demo, and per-project
+install and uninstall ([adoption guide](docs/ADOPTION_GUIDE.md)). Still open, in
+[the MVP plan](docs/ADLC_AGENT_ATLAS_MVP_PLAN.md): the guided demo with a junior and
+an expert person, and adjusting texts and hierarchy from what they say.
 
 Internal package names, paths, scripts and environment variables still say
 `odradek`.
@@ -74,13 +75,17 @@ from a raw hook capture.
 
 The API reads `agent-kit/output/sessions/*.json` through a read-only volume. It
 does not read chat histories, provider folders, running processes or credentials.
-To observe a Claude Code run, start it with the optional Atlas hooks (they add to
-ADLC's hooks, they do not replace them):
+To observe a project, turn the optional Atlas hooks on for it (they add to ADLC's
+hooks, they do not replace them) and off again whenever you like:
 
 ```bash
-node agent-kit/scripts/atlas-hook-config.mjs --write /tmp/atlas-settings.json
-claude --settings /tmp/atlas-settings.json
+node agent-kit/scripts/atlas-install.mjs install --project /path/to/project
+node agent-kit/scripts/atlas-install.mjs uninstall --project /path/to/project
 ```
+
+For a single Claude Code session without installing anything, generate settings
+with `agent-kit/scripts/atlas-hook-config.mjs --write <file>` and start Claude Code
+with `--settings <file>`. The full walkthrough is [the adoption guide](docs/ADOPTION_GUIDE.md).
 
 The adapter writes `agent-kit/output/sessions/<session>.json` as the run goes, and
 the open session updates by itself. `agent-kit/scripts/odradek-event.mjs` can still
@@ -92,9 +97,11 @@ prompts, responses, file contents, command output or secrets.
 ## Using it with a product repository
 
 1. Run Atlas from this checkout when you want it.
-2. Work in your product repository with ADLC as usual; nothing about Atlas changes
+2. `atlas-install.mjs install --project <dir>`: a 10-minute, per-project, reversible
+   step ([adoption guide](docs/ADOPTION_GUIDE.md)).
+3. Work in your product repository with ADLC as usual; nothing about Atlas changes
    how agents are created or verified.
-3. Optionally add a note from `templates/` so other agents know Atlas only observes.
+4. Optionally add a note from `templates/` so other agents know Atlas only observes.
 
 See [the workflow guide](docs/WORKFLOW.md). The earlier Odradek orchestration
 contract (architect-first routing, preflight, closure checklist) is archived in

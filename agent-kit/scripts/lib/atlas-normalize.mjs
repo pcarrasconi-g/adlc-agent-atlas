@@ -33,9 +33,32 @@ const GATES = [
   [/^dotnet\s+(test|build)\b/, (m) => `dotnet ${m[1]}`],
   [/^(?:mvn|\.\/gradlew|gradle)\s+(test|verify|check|build)\b/, (m) => `${/mvn/.test(m[0]) ? "mvn" : "gradle"} ${m[1]}`],
 ];
-const recipeOf = (seg) => {
+/**
+ * Extra check recipes for stacks the defaults do not know, from ATLAS_GATE_PATTERNS:
+ * a JSON list of {"match": "<regex>", "label": "ng $1"}. Bad entries are skipped.
+ */
+export function extraGates(raw) {
+  if (typeof raw !== "string" || !raw.trim()) return [];
+  try {
+    return JSON.parse(raw)
+      .slice(0, 20)
+      .flatMap(({ match, label }) => {
+        if (typeof match !== "string" || match.length > 200 || typeof label !== "string") return [];
+        try {
+          const re = new RegExp(match);
+          return [[re, (m) => label.replace(/\$(\d)/g, (_, i) => m[i] ?? "").slice(0, 40)]];
+        } catch {
+          return []; // one bad pattern must not disable the others
+        }
+      });
+  } catch {
+    return [];
+  }
+}
+
+const recipeOf = (seg, extra = []) => {
   seg = seg.trim().replace(/^(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)+/, "");
-  for (const [re, label] of GATES) {
+  for (const [re, label] of [...GATES, ...extra]) {
     const m = seg.match(re);
     if (m) return label(m);
   }
@@ -56,12 +79,12 @@ const HARMLESS = /^(?:cd|echo|export|pwd|true|:)(?:\s|$)/;
  * theirs. `just lint; echo "exit=$?"` always exits 0, `just lint | tail` exits
  * with tail's code: in those cases the result is unknown, never "passed".
  */
-export function analyzeCommand(command) {
+export function analyzeCommand(command, extra = []) {
   if (typeof command !== "string") return { recipes: [], simple: false };
-  const recipes = [...new Set(command.split(/&&|\|\||;|\n|\|/).map(recipeOf).filter(Boolean))];
+  const recipes = [...new Set(command.split(/&&|\|\||;|\n|\|/).map((s) => recipeOf(s, extra)).filter(Boolean))];
   if (!recipes.length) return { recipes, simple: false };
   const masked = /;|\|\||\||\n|`|\$\(|&\s*$/.test(command);
-  const others = command.split("&&").map((s) => s.trim()).filter((s) => s && !recipeOf(s));
+  const others = command.split("&&").map((s) => s.trim()).filter((s) => s && !recipeOf(s, extra));
   const simple = !masked && others.every((s) => HARMLESS.test(s));
   return { recipes, simple };
 }
@@ -126,6 +149,7 @@ export function normalizeHook(payload, { receivedAt, env = {}, git } = {}) {
   const agentType = id(payload.agent_type);
   const toolUseId = id(payload.tool_use_id);
   const tool = id(payload.tool_name);
+  const extra = extraGates(env.ATLAS_GATE_PATTERNS);
   const ctx = { cwd: pathRef(payload.cwd), worktree: worktreeOf(payload.cwd), projectDir: pathRef(env.CLAUDE_PROJECT_DIR) };
   const input = payload.tool_input && typeof payload.tool_input === "object" ? payload.tool_input : {};
   const base = { v: SCHEMA, at: receivedAt, session, source: event };
@@ -157,13 +181,13 @@ export function normalizeHook(payload, { receivedAt, env = {}, git } = {}) {
       fields = { kind: event === "TaskCreated" ? "task_created" : "task_completed", taskId, task: redactText(payload.task_subject), ...(event === "TaskCompleted" ? rootOf(git, env) : {}) };
       break;
     case "PreToolUse": {
-      const cmd = tool === "Bash" ? analyzeCommand(input.command) : undefined;
+      const cmd = tool === "Bash" ? analyzeCommand(input.command, extra) : undefined;
       if (tool === "Agent") fields = { kind: "agent_launch", agent, toolUseId, task: redactText(input.description), agentType: id(input.subagent_type), isolation: id(input.isolation) };
       else if (cmd?.recipes.length) fields = { kind: "gate_started", agent, toolUseId, recipe: cmd.recipes.join(" + "), complex: cmd.simple && cmd.recipes.length === 1 ? undefined : true, ...ctx };
       break;
     }
     case "PostToolUse": {
-      const cmd = tool === "Bash" ? analyzeCommand(input.command) : undefined;
+      const cmd = tool === "Bash" ? analyzeCommand(input.command, extra) : undefined;
       const duration = Number.isFinite(payload.duration_ms) ? payload.duration_ms : undefined;
       if (tool === "Agent") {
         const r = payload.tool_response && typeof payload.tool_response === "object" ? payload.tool_response : {};
@@ -177,7 +201,7 @@ export function normalizeHook(payload, { receivedAt, env = {}, git } = {}) {
       break;
     }
     case "PostToolUseFailure": {
-      const cmd = tool === "Bash" ? analyzeCommand(input.command) : undefined;
+      const cmd = tool === "Bash" ? analyzeCommand(input.command, extra) : undefined;
       if (cmd?.recipes.length) {
         const m = typeof payload.error === "string" ? payload.error.match(/^Exit code (\d+)/) : null;
         const reliable = cmd.simple && cmd.recipes.length === 1;

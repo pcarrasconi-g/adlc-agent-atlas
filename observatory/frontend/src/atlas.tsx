@@ -343,7 +343,7 @@ export function DiagnosePanel(p: {
           <b>Checks (lint, tests, typecheck):</b>{" "}
           {checks
             ? `${checks} observed with an exit code`
-            : "none observed, so nothing here is verified"}{" "}
+            : "not observed, so nothing here is verified (no check ran, or none was recognised)"}{" "}
           <ProvChip p={checks ? "verified" : "unknown"} />
         </li>
         <li>
