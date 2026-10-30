@@ -8,10 +8,11 @@ Atlas turns minimal execution evidence into a map of who took part, what they
 received, what they delivered, what was verified and what deserves attention.
 It is not a chatbot, a remote control or a replacement for ADLC.
 
-Status: MVP in progress. The event contract and trust semantics are defined
-([docs/ATLAS_EVENT_CONTRACT.md](docs/ATLAS_EVENT_CONTRACT.md)); the hook adapter,
-the signals and the recorded demo come in later increments of
-[the MVP plan](docs/ADLC_AGENT_ATLAS_MVP_PLAN.md).
+Status: MVP in progress. Done: the event contract and trust semantics
+([docs/ATLAS_EVENT_CONTRACT.md](docs/ATLAS_EVENT_CONTRACT.md)) and the map with
+live-follow, replay and the Learn / Diagnose readings. Still to come, in
+[the MVP plan](docs/ADLC_AGENT_ATLAS_MVP_PLAN.md): the hook adapter, the signals
+and the recorded demo story.
 
 Internal package names, paths, scripts and environment variables still say
 `odradek`.
@@ -50,6 +51,15 @@ you decide to.
 
 `npm --prefix agent-kit run observatory:check` reports whether the service is up
 and belongs to this checkout.
+
+## Try the recorded sample
+
+`docs/samples/recorded-two-subagents.json` is a real Claude Code 2.1.311 run with
+two parallel subagents (IDs and content sanitized). Copy it into
+`agent-kit/output/sessions/` while the viewer runs and open it: it shows the map,
+the Learn story and the Diagnose table. It has no checks, so nothing in it is
+shown as verified. `agent-kit/scripts/atlas-sample-from-hooks.mjs` rebuilds it
+from a raw hook capture.
 
 ## Recording events
 

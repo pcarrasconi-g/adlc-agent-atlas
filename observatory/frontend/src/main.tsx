@@ -1,7 +1,26 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 import "./branding.css";
+import "./atlas.css";
+import {
+  AgentBrief,
+  DiagnosePanel,
+  Filters,
+  LiveBar,
+  StoryPanel,
+  statusIcon,
+  type DiagnoseRow,
+} from "./atlas.tsx";
+import { followReducer, initialFollow } from "./lib/follow.ts";
+import { liveness, staleAfterMs, type Liveness } from "./lib/liveness.ts";
+import {
+  fromEvidence,
+  fromRelation,
+  isStronger,
+  type Provenance,
+} from "./lib/provenance.ts";
+import { buildStory, linkKey } from "./lib/story.ts";
 
 type Any = Record<string, any>;
 type Link = Any & {
@@ -105,7 +124,12 @@ async function loadAllEvents(sessionId: string, signal: AbortSignal) {
     .sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0));
 }
 function Pill({ v }: { v: string }) {
-  return <span className={"pill " + v}>{v === "idle" ? "IDLE" : v}</span>;
+  return (
+    <span className={"pill " + v}>
+      <span aria-hidden="true">{statusIcon(v)}</span>{" "}
+      {v === "idle" ? "IDLE" : v}
+    </span>
+  );
 }
 
 const relationName = (value: any) =>
@@ -173,7 +197,19 @@ function normalizeLinks(raw: any[], agents: any[]): Link[] {
       return;
     const relation = relationKind({ ...rawLink, ...extra });
     const key = `${s}->${t}:${relation}`;
-    if (out.some((x) => x._key === key)) return;
+    const existing = out.findIndex((x) => x._key === key);
+    if (existing >= 0) {
+      // The same relation seen twice (e.g. first inferred, later observed):
+      // keep the one with stronger evidence.
+      if (
+        !isStronger(
+          fromRelation(relationProvenance(rawLink)),
+          fromRelation(out[existing].provenance),
+        )
+      )
+        return;
+      out.splice(existing, 1);
+    }
     const confidence = Number(
       rawLink?.confidence ?? rawLink?.score ?? extra.confidence,
     );
@@ -251,6 +287,31 @@ function withTopology(agents: any[], links: Link[]) {
   });
 }
 
+const safeLocal = (key: string) => {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+};
+const STATUS_BUCKETS = ["working", "done", "failed", "waiting", "unknown"];
+const bucket = (s: string) =>
+  ["running", "working"].includes(s)
+    ? "working"
+    : ["done", "completed", "complete"].includes(s)
+      ? "done"
+      : ["failed", "blocked"].includes(s)
+        ? "failed"
+        : s === "waiting"
+          ? "waiting"
+          : "unknown";
+const eventTime = (e: any) => {
+  const t = Date.parse(e?.timestamp || e?.createdAt || "");
+  return Number.isFinite(t) ? t : null;
+};
+const isCheck = (e: any) =>
+  /^(gate|check|verification)[._]/i.test(String(e?.type || ""));
+
 function App() {
   const [projects, setProjects] = useState<any[]>([]),
     [sessions, setSessions] = useState<any[]>([]),
@@ -259,16 +320,34 @@ function App() {
     [events, setEvents] = useState<any[]>([]),
     [base, setBase] = useState<any>(null),
     [projection, setProjection] = useState<any>(null),
-    [cursor, setCursor] = useState(0),
-    [playing, setPlaying] = useState(false),
+    [play, dispatch] = useReducer(followReducer, initialFollow),
     [speed, setSpeed] = useState(1),
-    [unseen, setUnseen] = useState(0),
     [zoom, setZoom] = useState(1),
     [mode, setMode] = useState("map"),
+    [lens, setLens] = useState<"explore" | "learn" | "diagnose">("explore"),
+    [storyIndex, setStoryIndex] = useState(0),
     [q, setQ] = useState(""),
+    [agentQuery, setAgentQuery] = useState(""),
+    [statusFilter, setStatusFilter] = useState<string[]>([]),
+    [phase, setPhase] = useState(""),
     [right, setRight] = useState(true),
     [selectedAgentId, setSelectedAgentId] = useState<string | null>(null),
-    [hoverAgentId, setHoverAgentId] = useState<string | null>(null);
+    [hoverAgentId, setHoverAgentId] = useState<string | null>(null),
+    [connected, setConnected] = useState(true),
+    [now, setNow] = useState(Date.now());
+  const { cursor, playing, unseen, follow } = play;
+  const selectedId: string | undefined = selected?.id;
+  const selectedIdRef = useRef<string | undefined>();
+  selectedIdRef.current = selectedId;
+  const refreshing = useRef<AbortController>();
+  const staleAfter = useMemo(
+    () =>
+      staleAfterMs(
+        (import.meta as any).env?.VITE_ATLAS_STALE_AFTER_SEC ??
+          safeLocal("atlas:staleAfterSec"),
+      ),
+    [],
+  );
   const load = async () => {
     try {
       const [p, s] = await Promise.all([
@@ -283,67 +362,91 @@ function App() {
       );
     } catch {}
   };
+  // Reload the selected session's events and graph. `reset` is true when the
+  // session was just opened; otherwise this is a live update and the follow
+  // state decides whether the cursor moves.
+  const refresh = async (id: string, reset: boolean) => {
+    refreshing.current?.abort();
+    const controller = new AbortController();
+    refreshing.current = controller;
+    const [d, ev, g] = await Promise.allSettled([
+      api(`/api/sessions/${id}`),
+      loadAllEvents(id, controller.signal),
+      api(`/api/sessions/${id}/graph`),
+    ]);
+    if (controller.signal.aborted || selectedIdRef.current !== id) return;
+    if (ev.status !== "fulfilled") {
+      // A failed live refresh must not wipe what is on screen.
+      if (reset) dispatch({ type: "open", total: 0 });
+      return;
+    }
+    if (d.status === "fulfilled") setDetail(d.value);
+    setBase(g.status === "fulfilled" ? g.value : null);
+    setEvents(ev.value);
+    dispatch({ type: reset ? "open" : "events", total: ev.value.length });
+  };
   useEffect(() => {
     load();
     const e = new EventSource("/api/stream");
-    e.onmessage = () => {
-      if (selected && cursor < events.length - 1) setUnseen((n) => n + 1);
+    e.onopen = () => setConnected(true);
+    e.onerror = () => setConnected(false);
+    e.onmessage = (m) => {
+      setConnected(true);
+      let d: any = {};
+      try {
+        d = JSON.parse(m.data);
+      } catch {}
       load();
+      const id = selectedIdRef.current;
+      // "ready" is sent on every (re)connect: resync, since events may have
+      // arrived while the stream was down.
+      if (
+        id &&
+        (d.type === "ready" ||
+          (d.type === "session.updated" && d.sessionId === id))
+      )
+        refresh(id, false);
     };
     return () => e.close();
-  }, [selected?.id, cursor, events.length]);
+  }, []);
   useEffect(() => {
-    if (!selected) return;
-    const controller = new AbortController();
-    setCursor(0);
-    setPlaying(false);
-    setUnseen(0);
+    dispatch({ type: "open", total: 0 });
+    setEvents([]);
+    setBase(null);
     setProjection(null);
     setSelectedAgentId(null);
     setHoverAgentId(null);
-    Promise.allSettled([
-      api(`/api/sessions/${selected.id}`),
-      loadAllEvents(selected.id, controller.signal),
-      api(`/api/sessions/${selected.id}/graph`),
-    ]).then((r) => {
-      if (controller.signal.aborted) return;
-      setDetail(r[0].status === "fulfilled" ? r[0].value : selected);
-      setEvents(r[1].status === "fulfilled" ? r[1].value : []);
-      setBase(r[2].status === "fulfilled" ? r[2].value : null);
-    });
-    return () => controller.abort();
-  }, [selected?.id]);
+    setStoryIndex(0);
+    setDetail(selected ?? null);
+    if (!selectedId) return;
+    refresh(selectedId, true);
+    return () => refreshing.current?.abort();
+  }, [selectedId]);
   useEffect(() => {
-    if (!selected || !events.length) return;
+    if (!selectedId || !events.length) return;
     let dead = false;
     api<any>(
-      `/api/sessions/${selected.id}/projection?atSequence=${events[cursor]?.sequence ?? cursor}`,
+      `/api/sessions/${selectedId}/projection?atSequence=${events[cursor]?.sequence ?? cursor}`,
     )
       .then((x) => !dead && setProjection(x))
       .catch(() => !dead && setProjection(null));
     return () => {
       dead = true;
     };
-  }, [selected?.id, cursor, events]);
+  }, [selectedId, cursor, events]);
   useEffect(() => {
     if (!playing) return;
-    const i = setInterval(
-      () =>
-        setCursor((x) => {
-          if (x >= events.length - 1) {
-            setPlaying(false);
-            return x;
-          }
-          return x + 1;
-        }),
-      speed * 1000,
-    );
+    const i = setInterval(() => dispatch({ type: "tick" }), speed * 1000);
     return () => clearInterval(i);
-  }, [playing, speed, events.length]);
+  }, [playing, speed]);
   useEffect(() => {
-    const f = () => document.hidden && setPlaying(false);
+    const f = () => document.hidden && dispatch({ type: "pause" });
     document.addEventListener("visibilitychange", f);
     return () => document.removeEventListener("visibilitychange", f);
+  }, []);
+  useEffect(() => {
+    const i = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(i);
   }, []);
   const cur = events[cursor],
     projectionAvailable = projection !== null,
@@ -370,7 +473,14 @@ function App() {
     () =>
       withTopology(
         agents0.map((a: any) => {
-          if (projectionAvailable) return { ...a, status: nodeStatus(a) };
+          if (projectionAvailable)
+            // A finished agent shows its result ("done"), not the generic
+            // "idle" that ends every non-failed agent of a closed session.
+            return {
+              ...a,
+              status: nodeStatus(a),
+              displayStatus: nodeStatus(a),
+            };
           const e = events
             .slice(0, cursor + 1)
             .filter(
@@ -386,6 +496,157 @@ function App() {
       ),
     [agents0, events, cursor, projectionAvailable, links],
   );
+  const recorded = Boolean(projection?.result),
+    atNewest = cursor >= events.length - 1,
+    lastSignalMs =
+      [...events]
+        .reverse()
+        .map(eventTime)
+        .find((t) => t !== null) ?? null;
+  // Per-agent signals up to the cursor: first, last, count and longest silence.
+  const signals = useMemo(() => {
+    const m = new Map<
+      string,
+      { first: number; last: number; count: number; maxGap: number }
+    >();
+    for (const e of events.slice(0, cursor + 1)) {
+      const t = eventTime(e);
+      if (!e.agentId || t === null) continue;
+      const s = m.get(e.agentId);
+      if (!s) m.set(e.agentId, { first: t, last: t, count: 1, maxGap: 0 });
+      else {
+        s.maxGap = Math.max(s.maxGap, t - s.last);
+        s.last = t;
+        s.count++;
+      }
+    }
+    return m;
+  }, [events, cursor]);
+  const livenessById = useMemo(
+    () =>
+      Object.fromEntries(
+        agents.map((a: any) => [
+          String(a.id),
+          liveness({
+            status: st(a),
+            lastSignalMs: signals.get(String(a.id))?.last ?? null,
+            nowMs: now,
+            staleAfter,
+            atPresent: atNewest,
+            recorded,
+          }),
+        ]),
+      ) as Record<string, Liveness>,
+    [agents, signals, now, staleAfter, atNewest, recorded],
+  );
+  const checks = useMemo(
+    () => events.slice(0, cursor + 1).filter(isCheck).length,
+    [events, cursor],
+  );
+  const phases = useMemo(
+    () =>
+      [
+        ...new Set(
+          events
+            .slice(0, cursor + 1)
+            .map((e: any) => e?.payload?.parsed?.phase)
+            .filter(Boolean),
+        ),
+      ] as string[],
+    [events, cursor],
+  );
+  const agentPhase = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const e of events.slice(0, cursor + 1)) {
+      const ph = e?.payload?.parsed?.phase;
+      if (ph && e.agentId) m.set(e.agentId, ph);
+    }
+    return m;
+  }, [events, cursor]);
+  const visibleAgents = agents.filter((a: any) => {
+    if (statusFilter.length && !statusFilter.includes(bucket(st(a))))
+      return false;
+    if (phase && agentPhase.get(String(a.id)) !== phase) return false;
+    const needle = agentQuery.trim().toLowerCase();
+    return (
+      !needle || `${name(a)} ${a.task || ""}`.toLowerCase().includes(needle)
+    );
+  });
+  // Learn mode: a short story from the same events and links the map draws.
+  const story = useMemo(
+    () =>
+      buildStory(
+        events.map((e: any) => ({
+          sequence: e.sequence,
+          status: e.status,
+          agentId: e.agentId,
+          type: e.type,
+        })),
+        arr(base?.nodes).map((n: any) => ({
+          id: String(n.id),
+          name: name(n),
+          isPrincipal: Boolean(n.isPrincipal),
+        })),
+        arr(base?.links).map((l: any) => ({
+          source: String(l.source),
+          target: String(l.target),
+          relation: relationKind(l),
+          provenance: l.provenance,
+          sequenceStart: l.sequenceStart,
+          sequence: l.sequence,
+        })),
+      ),
+    [events, base],
+  );
+  const stepIndex = Math.min(storyIndex, Math.max(0, story.length - 1));
+  const activeStep = lens === "learn" ? story[stepIndex] : undefined;
+  const highlight = activeStep
+    ? { agents: new Set(activeStep.agents), links: new Set(activeStep.links) }
+    : null;
+  const goToStep = (i: number) => {
+    const step = story[i];
+    if (!step) return;
+    setStoryIndex(i);
+    const idx = events.findIndex((e: any) => e.sequence >= step.sequence);
+    dispatch({ type: "seek", index: idx >= 0 ? idx : events.length - 1 });
+  };
+  const chooseLens = (next: "explore" | "learn" | "diagnose") => {
+    setLens(next);
+    if (next === "learn" && story.length) goToStep(stepIndex);
+  };
+  const diagnoseRows: DiagnoseRow[] = agents.map((a: any) => {
+    const id = String(a.id),
+      s = signals.get(id),
+      parent = (a.parentLinks || [])[0];
+    return {
+      id,
+      name: name(a),
+      shortId: shortId(a),
+      status: st(a),
+      liveness: livenessById[id],
+      identity: fromEvidence(evidence(a)),
+      parent: parent
+        ? name(
+            agents.find((x: any) => String(x.id) === parent.source) || {
+              id: parent.source,
+            },
+          )
+        : a.isPrincipal
+          ? "Session principal"
+          : "—",
+      parentProv: parent ? fromRelation(parent.provenance) : null,
+      first: s?.first ?? null,
+      last: s?.last ?? null,
+      maxGap: s?.maxGap ?? 0,
+      signals: s?.count ?? 0,
+    };
+  });
+  const relationCounts: Partial<Record<Provenance, number>> = {};
+  for (const l of links)
+    if (l.relation === "delegation" || l.relation === "handoff") {
+      const p = fromRelation(l.provenance);
+      relationCounts[p] = (relationCounts[p] || 0) + 1;
+    }
   const shown = sessions.filter((x) =>
       name(x).toLowerCase().includes(q.toLowerCase()),
     ),
@@ -393,9 +654,22 @@ function App() {
     currentStatus = operating(selected, projection, end),
     waitingOn = arr(projection?.waitingOn || projection?.waiting_on),
     selectedAgent = agents.find((a: any) => String(a.id) === selectedAgentId),
-    live = () => {
-      setCursor(Math.max(0, events.length - 1));
-      setUnseen(0);
+    parentOfSelected = selectedAgent?.parentLinks?.[0],
+    brief = selectedAgent && {
+      name: name(selectedAgent),
+      task: selectedAgent.task || null,
+      status: st(selectedAgent),
+      liveness: livenessById[String(selectedAgent.id)],
+      lastSignalMs: signals.get(String(selectedAgent.id))?.last ?? null,
+      nowMs: now,
+      staleAfter,
+      // The task label comes from the launch call; it is only as sure as the
+      // link that tied that call to this agent.
+      taskProv: parentOfSelected
+        ? fromRelation(parentOfSelected.provenance)
+        : fromEvidence(evidence(selectedAgent)),
+      statusProv: fromEvidence(evidence(selectedAgent)),
+      checks,
     };
   const selectAgent = (id: string) => {
     setSelectedAgentId(id);
@@ -465,16 +739,73 @@ function App() {
               )}
             </div>
             <div>
-              <button onClick={() => setMode("cards")}>Cards</button>
-              <button onClick={() => setMode("map")}>Map</button>
+              <span className="lens" role="group" aria-label="Reading mode">
+                {(["explore", "learn", "diagnose"] as const).map((l) => (
+                  <button
+                    key={l}
+                    aria-pressed={lens === l}
+                    onClick={() => chooseLens(l)}
+                  >
+                    {l[0].toUpperCase() + l.slice(1)}
+                  </button>
+                ))}
+              </span>
+              <span className="view" role="group" aria-label="View">
+                <button
+                  aria-pressed={mode === "cards"}
+                  onClick={() => setMode("cards")}
+                >
+                  Cards
+                </button>
+                <button
+                  aria-pressed={mode === "map"}
+                  onClick={() => setMode("map")}
+                >
+                  Map
+                </button>
+              </span>
             </div>
           </div>
+          {selected && (
+            <LiveBar
+              follow={follow}
+              recorded={recorded}
+              connected={connected}
+              total={events.length}
+              cursor={cursor}
+              unseen={unseen}
+              lastSignalMs={lastSignalMs}
+              nowMs={now}
+              staleAfter={staleAfter}
+              onPresent={() => dispatch({ type: "present" })}
+            />
+          )}
+          {selected && agents.length > 0 && (
+            <Filters
+              statuses={STATUS_BUCKETS}
+              active={statusFilter}
+              toggle={(s) =>
+                setStatusFilter((x) =>
+                  x.includes(s) ? x.filter((y) => y !== s) : [...x, s],
+                )
+              }
+              query={agentQuery}
+              setQuery={setAgentQuery}
+              phases={phases}
+              phase={phase}
+              setPhase={setPhase}
+              shown={visibleAgents.length}
+              total={agents.length}
+            />
+          )}
           {selected &&
             (mode === "map" ? (
               <Graph
                 sessionId={selected.id}
-                agents={agents}
+                agents={visibleAgents}
                 links={links}
+                liveness={livenessById}
+                highlight={highlight}
                 zoom={zoom}
                 setZoom={setZoom}
                 current={cur}
@@ -512,17 +843,32 @@ function App() {
                 ))}
               </div>
             ))}
+          {lens === "learn" && (
+            <StoryPanel
+              steps={story}
+              index={stepIndex}
+              cursorSequence={cur?.sequence ?? null}
+              onGo={goToStep}
+            />
+          )}
+          {lens === "diagnose" && (
+            <DiagnosePanel
+              rows={diagnoseRows}
+              checks={checks}
+              nowMs={now}
+              relationCounts={relationCounts}
+            />
+          )}
           <Controls
             {...{
               events,
               cursor,
-              setCursor,
+              dispatch,
               playing,
-              setPlaying,
               speed,
               setSpeed,
               unseen,
-              live,
+              follow,
             }}
           />
           <div className="zoom">
@@ -562,6 +908,7 @@ function App() {
                 projection?.recordedStatus ||
                 projection?.recorded_status ||
                 st(selected),
+              brief,
             }}
             close={() => setRight(false)}
             remove={async () => {
@@ -584,31 +931,30 @@ function App() {
 }
 function Controls(p: any) {
   const e = p.events[p.cursor];
+  const go = (index: number) => p.dispatch({ type: "seek", index });
   return (
     <section className="controls" aria-label="Session playback">
       <div>
-        <button aria-label="Go to first event" onClick={() => p.setCursor(0)}>
+        <button aria-label="Go to first event" onClick={() => go(0)}>
           |◀
         </button>
         <button
           aria-label="Previous event"
-          onClick={() => p.setCursor((x: number) => Math.max(0, x - 1))}
+          onClick={() => p.dispatch({ type: "step", delta: -1 })}
         >
           ◀
         </button>
         <button
-          aria-label={p.playing ? "Pause playback" : "Play session"}
+          aria-label={p.playing ? "Pause replay" : "Replay history"}
           aria-pressed={p.playing}
           className="play"
-          onClick={() => p.setPlaying((x: boolean) => !x)}
+          onClick={() => p.dispatch({ type: "togglePlay" })}
         >
           {p.playing ? "Ⅱ" : "▶"}
         </button>
         <button
           aria-label="Next event"
-          onClick={() =>
-            p.setCursor((x: number) => Math.min(p.events.length - 1, x + 1))
-          }
+          onClick={() => p.dispatch({ type: "step", delta: 1 })}
         >
           ▶
         </button>
@@ -631,10 +977,7 @@ function Controls(p: any) {
           min="0"
           max={Math.max(0, p.events.length - 1)}
           value={p.cursor}
-          onChange={(e) => {
-            p.setPlaying(false);
-            p.setCursor(+e.target.value);
-          }}
+          onChange={(e) => go(+e.target.value)}
         />
         {p.events.map((x: any, i: number) => (
           <button
@@ -647,16 +990,16 @@ function Controls(p: any) {
                 (p.events.length > 1 ? (100 * i) / (p.events.length - 1) : 0) +
                 "%",
             }}
-            onClick={() => p.setCursor(i)}
+            onClick={() => go(i)}
           />
         ))}
       </div>
       <button
         className="golive"
-        disabled={p.cursor === p.events.length - 1}
-        onClick={p.live}
+        disabled={p.follow}
+        onClick={() => p.dispatch({ type: "present" })}
       >
-        ● Go live{p.unseen ? " (" + p.unseen + " new)" : ""}
+        ↦ Back to present{p.unseen ? " (" + p.unseen + " new)" : ""}
       </button>
       <p aria-live="polite">
         <b>
@@ -714,6 +1057,7 @@ function Inspect({
   waitingOn,
   projectionAvailable,
   historicalStatus,
+  brief,
   close,
   remove,
 }: any) {
@@ -773,126 +1117,134 @@ function Inspect({
           <b>{selectedAgent.operationalStatus || st(selectedAgent)}</b> ·
           Result: <b>{selectedAgent.terminalResult || "—"}</b>
         </p>
-        <h4>IDENTITY AND EVIDENCE</h4>
-        <dl>
-          <dt>Short ID</dt>
-          <dd>{shortId(selectedAgent)}</dd>
-          <dt>Full ID</dt>
-          <dd>{externalId}</dd>
-          <dt>Profile</dt>
-          <dd>
-            {selectedAgent.profile || "—"}{" "}
-            {selectedAgent.profile && (
-              <Evidence value={evidence(selectedAgent)} />
-            )}
-          </dd>
-          <dt>Provider</dt>
-          <dd>
-            {selectedAgent.provider || "—"}{" "}
-            {selectedAgent.provider && (
-              <Evidence value={evidence(selectedAgent)} />
-            )}
-          </dd>
-          <dt>Configured model</dt>
-          <dd>
-            {selectedAgent.configuredModel ||
-              selectedAgent.configured_model ||
-              "—"}{" "}
-            {(selectedAgent.configuredModel ||
-              selectedAgent.configured_model) && (
-              <Evidence value={evidence(selectedAgent)} />
-            )}
-          </dd>
-          <dt>Declared skills</dt>
-          <dd>
-            {skills.length ? skills.join(", ") : "—"}{" "}
-            {skills.length > 0 && <Evidence value={"declared"} />}
-          </dd>
-          <dt>Last event</dt>
-          <dd>
-            {tm(last?.timestamp || last?.createdAt || selectedAgent.updatedAt)}
-          </dd>
-        </dl>
-        <h4>TOPOLOGY</h4>
-        <div className="agent-topology">
-          <div>
-            <b>Parents</b>
-            {parents.length ? (
-              parents.map((l: any) => (
-                <p key={l.source}>
-                  <span className={"relation-tag " + l.relation}>
-                    {l.relation}
-                  </span>{" "}
-                  {name(
-                    agents.find((a: any) => String(a.id) === l.source) || {
-                      id: l.source,
-                    },
-                  )}
-                </p>
-              ))
-            ) : (
-              <p className="muted">
-                {selectedAgent.isPrincipal
-                  ? "Session principal"
-                  : "Recorded root"}
-              </p>
-            )}
-          </div>
-          <div>
-            <b>Children</b>
-            {children.length ? (
-              children.map((l: any) => (
-                <p key={l.target}>
-                  <span className={"relation-tag " + l.relation}>
-                    {l.relation}
-                  </span>{" "}
-                  {name(
-                    agents.find((a: any) => String(a.id) === l.target) || {
-                      id: l.target,
-                    },
-                  )}
-                </p>
-              ))
-            ) : (
-              <p className="muted">No children recorded</p>
-            )}
-          </div>
-        </div>
-        <h4>LAST EVENT</h4>
-        {last ? (
-          <article>
-            <b>{last.type || "Event"}</b>
-            <p>{msg(last)}</p>
-            {last.content && (
-              <details>
-                <summary>Recorded content</summary>
-                <pre>{last.content}</pre>
-              </details>
-            )}
-          </article>
-        ) : (
-          <p className="muted">No events recorded for this agent.</p>
-        )}
-        <h4>RELATIONS ({parents.length + children.length})</h4>
-        {[...parents, ...children].map((l: any, i: number) => (
-          <div className="edge-detail" key={l.id || i}>
-            <b>
-              {name(
-                agents.find(
-                  (a: any) =>
-                    String(a.id) === (l.source === id ? l.target : l.source),
-                ) || { id: l.source === id ? l.target : l.source },
+        {brief && <AgentBrief {...brief} />}
+        <details className="evidence-block">
+          <summary>Evidence and relations</summary>
+          <h4>IDENTITY AND EVIDENCE</h4>
+          <dl>
+            <dt>Short ID</dt>
+            <dd>{shortId(selectedAgent)}</dd>
+            <dt>Full ID</dt>
+            <dd>{externalId}</dd>
+            <dt>Profile</dt>
+            <dd>
+              {selectedAgent.profile || "—"}{" "}
+              {selectedAgent.profile && (
+                <Evidence value={evidence(selectedAgent)} />
               )}
-            </b>
-            <small>
-              <span className={"relation-tag " + l.relation}>{l.relation}</span>{" "}
-              · {l.provenance || "inferred"}
-              {l.confidence !== undefined
-                ? " · " + Math.round(l.confidence * 100) + "%"
-                : ""}
-            </small>
+            </dd>
+            <dt>Provider</dt>
+            <dd>
+              {selectedAgent.provider || "—"}{" "}
+              {selectedAgent.provider && (
+                <Evidence value={evidence(selectedAgent)} />
+              )}
+            </dd>
+            <dt>Configured model</dt>
+            <dd>
+              {selectedAgent.configuredModel ||
+                selectedAgent.configured_model ||
+                "—"}{" "}
+              {(selectedAgent.configuredModel ||
+                selectedAgent.configured_model) && (
+                <Evidence value={evidence(selectedAgent)} />
+              )}
+            </dd>
+            <dt>Declared skills</dt>
+            <dd>
+              {skills.length ? skills.join(", ") : "—"}{" "}
+              {skills.length > 0 && <Evidence value={"declared"} />}
+            </dd>
+            <dt>Last event</dt>
+            <dd>
+              {tm(
+                last?.timestamp || last?.createdAt || selectedAgent.updatedAt,
+              )}
+            </dd>
+          </dl>
+          <h4>TOPOLOGY</h4>
+          <div className="agent-topology">
+            <div>
+              <b>Parents</b>
+              {parents.length ? (
+                parents.map((l: any) => (
+                  <p key={l.source}>
+                    <span className={"relation-tag " + l.relation}>
+                      {l.relation}
+                    </span>{" "}
+                    {name(
+                      agents.find((a: any) => String(a.id) === l.source) || {
+                        id: l.source,
+                      },
+                    )}
+                  </p>
+                ))
+              ) : (
+                <p className="muted">
+                  {selectedAgent.isPrincipal
+                    ? "Session principal"
+                    : "Recorded root"}
+                </p>
+              )}
+            </div>
+            <div>
+              <b>Children</b>
+              {children.length ? (
+                children.map((l: any) => (
+                  <p key={l.target}>
+                    <span className={"relation-tag " + l.relation}>
+                      {l.relation}
+                    </span>{" "}
+                    {name(
+                      agents.find((a: any) => String(a.id) === l.target) || {
+                        id: l.target,
+                      },
+                    )}
+                  </p>
+                ))
+              ) : (
+                <p className="muted">No children recorded</p>
+              )}
+            </div>
           </div>
-        ))}
+          <h4>LAST EVENT</h4>
+          {last ? (
+            <article>
+              <b>{last.type || "Event"}</b>
+              <p>{msg(last)}</p>
+              {last.content && (
+                <details>
+                  <summary>Recorded content</summary>
+                  <pre>{last.content}</pre>
+                </details>
+              )}
+            </article>
+          ) : (
+            <p className="muted">No events recorded for this agent.</p>
+          )}
+          <h4>RELATIONS ({parents.length + children.length})</h4>
+          {[...parents, ...children].map((l: any, i: number) => (
+            <div className="edge-detail" key={l.id || i}>
+              <b>
+                {name(
+                  agents.find(
+                    (a: any) =>
+                      String(a.id) === (l.source === id ? l.target : l.source),
+                  ) || { id: l.source === id ? l.target : l.source },
+                )}
+              </b>
+              <small>
+                <span className={"relation-tag " + l.relation}>
+                  {l.relation}
+                </span>{" "}
+                · {l.provenance || "inferred"}
+                {l.confidence !== undefined
+                  ? " · " + Math.round(l.confidence * 100) + "%"
+                  : ""}
+              </small>
+            </div>
+          ))}
+        </details>
       </aside>
     );
   }
@@ -1027,6 +1379,8 @@ function Graph({
   hoverAgentId,
   onSelect,
   onHover,
+  liveness,
+  highlight,
 }: any) {
   const [pan, setPan] = useState({ x: 0, y: 0 }),
     [positions, setPositions] = useState<
@@ -1186,7 +1540,15 @@ function Graph({
             return (
               <path
                 className={
-                  "flow relation-" + l.relation + " provenance-" + l.provenance
+                  "flow relation-" +
+                  l.relation +
+                  " provenance-" +
+                  l.provenance +
+                  (highlight
+                    ? highlight.links.has(linkKey(l.source, l.target))
+                      ? " story-hl"
+                      : " dim"
+                    : "")
                 }
                 key={l.id || i}
                 d={`M ${a.x} ${a.y} C ${a.x + dx * 0.35} ${a.y + dy * 0.05}, ${b.x - dx * 0.35} ${b.y - dy * 0.05}, ${b.x} ${b.y}`}
@@ -1221,7 +1583,14 @@ function Graph({
                     ? "updated "
                     : "") +
                   (active ? "selected " : "") +
-                  (hovered ? "hovered" : "")
+                  (hovered ? "hovered " : "") +
+                  "live-" +
+                  (liveness?.[id] ?? "history") +
+                  (highlight
+                    ? highlight.agents.has(id)
+                      ? " story-hl"
+                      : " dim"
+                    : "")
                 }
                 transform={`translate(${p.x},${p.y})`}
                 tabIndex={0}
@@ -1258,11 +1627,13 @@ function Graph({
                   <div className="label">
                     {name(a)}
                     <small className="agent-task" title={a.task || ""}>
-                      {a.task || "Tarea no registrada"}
+                      {a.task || "Task not recorded"}
                     </small>
                     <small>
-                      {shortId(a)} · {st(a)} ·{" "}
-                      {a.parentLinks?.length ? "child" : "root"}
+                      {shortId(a)} · {statusIcon(st(a))} {st(a)}
+                      {liveness?.[id] === "uncertain"
+                        ? " (uncertain)"
+                        : ""} · {a.parentLinks?.length ? "child" : "root"}
                     </small>
                   </div>
                 </foreignObject>

@@ -22,7 +22,7 @@ names below are facts about that version, not a promise about others.
 | `SubagentStart` | `agent_id`, `agent_type` | **No parent, task, model or worktree.** |
 | `SubagentStop` | `agent_id`, `agent_type`, `last_assistant_message`, `agent_transcript_path`, `background_tasks`, `stop_hook_active` | `background_tasks` still lists the stopping agent as `running`; never use it as liveness. |
 | `PreToolUse` / `PostToolUse` | `tool_name`, `tool_use_id`, `tool_input`, `tool_response` (post), `duration_ms` (post); **`agent_id` + `agent_type` only when a subagent ran the tool** | Free per-agent activity signal. |
-| `PostToolUse` for `Agent` | `tool_response.agentId`, `.status` (`async_launched`), `.resolvedModel`; `tool_input.description`, `.subagent_type` | The only place the new agent's ID is tied to who launched it. |
+| `PostToolUse` for `Agent` | `tool_response.agentId`, `.agentType` (sync), `.status` (`async_launched` or `completed`), `.resolvedModel`; `tool_input.description`, `.subagent_type` | The only place the new agent's ID is tied to who launched it. In a **synchronous** launch it arrives only after the subagent stopped. |
 | `TaskCreated` / `TaskCompleted` | `task_id`, `task_subject`, `task_description` | No `agent_id` seen in a non-team session. |
 | `Stop` | `last_assistant_message`, `background_tasks`, `stop_hook_active` | |
 | `UserPromptSubmit` | `prompt`, `prompt_id` | Async agent completion arrives as a `<task-notification>` prompt. Not a source for Atlas. |
@@ -30,10 +30,14 @@ names below are facts about that version, not a promise about others.
 **No payload carries a timestamp, a parent agent ID, a branch or a worktree.**
 The adapter must stamp receipt time and assign its own sequence number.
 
+Both launch styles were seen: the first run launched subagents asynchronously
+(`async_launched`), the second synchronously (`completed`, see section 2). A
+timestamped second capture is in
+[`contract-examples/claude-code-2.1.311-hooks-timestamped.sample.jsonl`](contract-examples/claude-code-2.1.311-hooks-timestamped.sample.jsonl).
+
 Not verified (shown as unknown in Atlas until checked): `TeammateIdle` and
 Agent Teams behavior (never fired in these runs), `Notification`, `PreCompact`,
-synchronous (non-async) subagent launches, and ADLC-specific `agent_type`
-values (the probe used `general-purpose`). Hook output may differ in the
+and ADLC-specific `agent_type` values (the probe used `general-purpose`). Hook output may differ in the
 Claude Code build bundled with the desktop app (bundled skills reported 2.1.308).
 
 ## 2. Identity and relations
@@ -47,9 +51,19 @@ Claude Code build bundled with the desktop app (bundled skills reported 2.1.308)
   parent = the event's `agent_id` if present, otherwise the principal. This is
   structural correlation of hook payloads, so the edge is `observed by hook`.
   If `agentId` is missing, draw no edge.
-- Observed order for one launch: `PreToolUse(Agent)` → `PostToolUse(Agent)` →
-  `SubagentStart`. The edge may therefore exist before the child's first event;
-  the importer must accept that and tolerate out-of-order delivery.
+- **Asynchronous launch:** `PreToolUse(Agent)` → `PostToolUse(Agent)` (carries
+  `agentId`) → `SubagentStart`. The edge is observed before the child's first event.
+- **Synchronous launch:** `PreToolUse(Agent)` → `SubagentStart` (no link to the
+  call) → … → `SubagentStop` → `PostToolUse(Agent)` (carries `agentId`, `status:
+  completed`). While the agent runs there is no observed edge. Atlas draws a
+  **two-phase edge**: at `SubagentStart`, if exactly one launch call is pending,
+  an *inferred* delegation (confidence 0.6, rule `adjacent-to-agent-launch`) and
+  the call's `description` as the task label; when `PostToolUse(Agent)` arrives
+  with the same `agentId`, the edge becomes *observed*. If the pending launches
+  are ambiguous, no edge is drawn. The map keeps the stronger of two edges for
+  the same pair, and Learn mode explains the change.
+- The importer must accept edges announced before the child's first event and
+  tolerate out-of-order delivery.
 - Task ↔ agent association is **not established** by these payloads. Show it as
   unknown until verified with Agent Teams.
 - ADLC phases (refine/plan/breakdown/execute/pr) are context, never agents.
@@ -99,10 +113,14 @@ Rules: a declaration is never painted as success; "no signal" is neither
 a comparable earlier measurement of the same recipe, revision and configuration;
 unknown stays unknown. Status is conveyed by text and icon as well as color.
 
-Mapping to the current backend vocabulary (`evidenceLevel`): `host-recorded` ≈
-observed by hook, `behavior-evidenced` ≈ verified by command, `declared` ≈
-declared, `unverifiable` ≈ unknown. "Inferred by rule" has no value yet; Increment
-1 adds it (and, for edges, uses `provenance: "inferred"`).
+Mapping to the current backend vocabulary (`evidenceLevel`, for agents):
+`host-recorded` ≈ observed by hook, `behavior-evidenced` ≈ verified by command,
+`declared` ≈ declared, `unverifiable` ≈ unknown. Relations carry their own
+`provenance` (`observed`, `verified`, `declared` or `inferred`; the legacy value
+`explicit` is read as declared). Decision in Increment 1: nodes keep the existing
+`evidenceLevel` enum and only relations and rule results are "inferred", so no
+migration was needed. The mapping lives in
+`observatory/frontend/src/lib/provenance.ts`.
 
 ## 6. Liveness
 
@@ -117,6 +135,6 @@ an agent is running. Adapter downtime and dropped events are recorded as gaps.
 ## 7. Open items for later increments
 
 1. Verify `TeammateIdle`, Agent Teams and task↔agent correlation with a real ADLC team run.
-2. Verify ADLC `agent_type` values and sync launches on the target setup.
+2. Verify ADLC `agent_type` values on the target setup.
 3. Gate observation (recipe, exit code, cwd) needs a wrapper or a bounded hook (Increment 2); nothing in these payloads reports it.
 4. Decide how a worktree is learned, since no hook payload carries it.

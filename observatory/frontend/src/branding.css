@@ -1,9 +1,9 @@
-/* Public release identity override. The underlying observability UI remains unchanged. */
-header b[aria-label="Odradek"] {
+/* ADLC Agent Atlas identity. The underlying observability UI remains unchanged. */
+header b[aria-label="ADLC Agent Atlas"] {
   font-size: 0;
 }
-header b[aria-label="Odradek"]::after {
-  content: "Odradek";
+header b[aria-label="ADLC Agent Atlas"]::after {
+  content: "ADLC Agent Atlas";
   font-size: 20px;
   font-weight: 800;
   color: #183b8c;
@@ -13,7 +13,7 @@ header small {
   font-size: 0;
 }
 header small::after {
-  content: "local thread observatory";
+  content: "local agent map";
   font-size: 11px;
 }
 header span {

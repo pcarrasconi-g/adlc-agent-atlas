@@ -1,0 +1,362 @@
+// Atlas-specific panels. Everything here renders facts the recording already
+// has and says how sure we are about each one; nothing is invented.
+import React, { useState } from "react";
+import {
+  ageLabel,
+  provenanceLabel,
+  type Provenance,
+} from "./lib/provenance.ts";
+import type { StoryStep } from "./lib/story.ts";
+import type { Liveness } from "./lib/liveness.ts";
+
+const clock = (ms: number | null) =>
+  ms === null || !Number.isFinite(ms)
+    ? "—"
+    : new Intl.DateTimeFormat("en-US", {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      }).format(ms);
+
+const ICONS: Record<string, string> = {
+  working: "●",
+  running: "●",
+  done: "✓",
+  completed: "✓",
+  complete: "✓",
+  failed: "✕",
+  blocked: "■",
+  waiting: "…",
+  idle: "○",
+  registered: "◇",
+  cancelled: "⊘",
+  canceled: "⊘",
+};
+export const statusIcon = (status: string) => ICONS[status] ?? "?";
+
+const PROV_ICONS: Record<Provenance, string> = {
+  verified: "✓✓",
+  observed: "◉",
+  declared: "✎",
+  inferred: "≈",
+  unknown: "?",
+};
+export function ProvChip({ p }: { p: Provenance }) {
+  return (
+    <span className={`prov ${p}`} title={provenanceLabel[p]}>
+      <i aria-hidden="true">{PROV_ICONS[p]}</i>
+      {provenanceLabel[p]}
+    </span>
+  );
+}
+
+export function LiveBar(p: {
+  follow: boolean;
+  recorded: boolean;
+  connected: boolean;
+  total: number;
+  cursor: number;
+  unseen: number;
+  lastSignalMs: number | null;
+  nowMs: number;
+  staleAfter: number;
+  onPresent: () => void;
+}) {
+  const mode = !p.follow ? "history" : p.recorded ? "recorded" : "live";
+  const age = p.lastSignalMs === null ? null : p.nowMs - p.lastSignalMs;
+  const stale = mode === "live" && (age === null || age > p.staleAfter);
+  return (
+    <div className={`livebar ${mode}`}>
+      <span className={`chip ${mode}${stale ? " uncertain" : ""}`}>
+        {mode === "live"
+          ? stale
+            ? "◌ LIVE · UNCERTAIN"
+            : "● LIVE"
+          : mode === "recorded"
+            ? "◼ RECORDED"
+            : "❙❙ HISTORY"}
+      </span>
+      <span role="status" aria-live="polite" className="livetext">
+        {mode === "live" &&
+          (age === null
+            ? "Following the newest step · no signal yet"
+            : stale
+              ? `Following the newest step · no signal for ${ageLabel(age)}, so activity is uncertain`
+              : `Following the newest step · last signal ${ageLabel(age)} ago`)}
+        {mode === "recorded" &&
+          `${p.total} steps recorded · showing the final state`}
+        {mode === "history" &&
+          `Viewing step ${p.total ? p.cursor + 1 : 0} of ${p.total}${p.unseen ? ` · ${p.unseen} new since` : ""}`}
+      </span>
+      {!p.connected && (
+        <span className="chip offline">⚠ Disconnected · retrying</span>
+      )}
+      {!p.follow && (
+        <button className="present" onClick={p.onPresent}>
+          ↦ Back to present{p.unseen ? ` (${p.unseen} new)` : ""}
+        </button>
+      )}
+    </div>
+  );
+}
+
+export function Filters(p: {
+  statuses: string[];
+  active: string[];
+  toggle: (status: string) => void;
+  query: string;
+  setQuery: (q: string) => void;
+  phases: string[];
+  phase: string;
+  setPhase: (v: string) => void;
+  shown: number;
+  total: number;
+}) {
+  return (
+    <div className="filters" role="group" aria-label="Filter agents">
+      {p.statuses.map((s) => (
+        <button
+          key={s}
+          aria-pressed={p.active.includes(s)}
+          onClick={() => p.toggle(s)}
+        >
+          {statusIcon(s)} {s}
+        </button>
+      ))}
+      <input
+        aria-label="Filter agents by name or task"
+        placeholder="⌕ Filter agents"
+        value={p.query}
+        onChange={(e) => p.setQuery(e.target.value)}
+      />
+      {p.phases.length > 0 && (
+        <select
+          aria-label="Filter by phase"
+          value={p.phase}
+          onChange={(e) => p.setPhase(e.target.value)}
+        >
+          <option value="">All phases</option>
+          {p.phases.map((x) => (
+            <option key={x}>{x}</option>
+          ))}
+        </select>
+      )}
+      {p.shown !== p.total && <small>{p.total - p.shown} hidden</small>}
+    </div>
+  );
+}
+
+export function StoryPanel(p: {
+  steps: StoryStep[];
+  index: number;
+  cursorSequence: number | null;
+  onGo: (i: number) => void;
+}) {
+  const step = p.steps[Math.min(p.index, p.steps.length - 1)];
+  if (!step)
+    return (
+      <section className="lens-panel story" aria-label="Guided story">
+        <p className="muted">
+          Not enough recorded evidence to tell a story yet.
+        </p>
+      </section>
+    );
+  const here = p.cursorSequence === step.sequence;
+  return (
+    <section className="lens-panel story" aria-label="Guided story">
+      <div className="story-head">
+        <b>
+          Learn · step {p.index + 1} of {p.steps.length}
+        </b>
+        <ProvChip p={step.provenance} />
+      </div>
+      <h3>{step.title}</h3>
+      <p>{step.body}</p>
+      <div className="story-nav">
+        <button disabled={p.index === 0} onClick={() => p.onGo(p.index - 1)}>
+          ‹ Previous
+        </button>
+        <span className="dots" aria-hidden="true">
+          {p.steps.map((s, i) => (
+            <i key={s.id} className={i === p.index ? "on" : ""} />
+          ))}
+        </span>
+        <button
+          disabled={p.index >= p.steps.length - 1}
+          onClick={() => p.onGo(p.index + 1)}
+        >
+          Next ›
+        </button>
+        {!here && (
+          <button className="present" onClick={() => p.onGo(p.index)}>
+            Show this moment
+          </button>
+        )}
+      </div>
+    </section>
+  );
+}
+
+export type DiagnoseRow = {
+  id: string;
+  name: string;
+  shortId: string;
+  status: string;
+  liveness: Liveness;
+  identity: Provenance;
+  parent: string;
+  parentProv: Provenance | null;
+  first: number | null;
+  last: number | null;
+  maxGap: number;
+  signals: number;
+};
+
+export function DiagnosePanel(p: {
+  rows: DiagnoseRow[];
+  checks: number;
+  nowMs: number;
+  relationCounts: Partial<Record<Provenance, number>>;
+}) {
+  return (
+    <section className="lens-panel diagnose" aria-label="Diagnosis">
+      <div className="story-head">
+        <b>Diagnose · same map, with the evidence</b>
+      </div>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Agent</th>
+              <th>Status</th>
+              <th>Identity</th>
+              <th>Launched by</th>
+              <th>First signal</th>
+              <th>Last signal</th>
+              <th>Longest silence</th>
+              <th>Signals</th>
+            </tr>
+          </thead>
+          <tbody>
+            {p.rows.map((r) => (
+              <tr key={r.id}>
+                <td>
+                  <b>{r.name}</b>
+                  <small>{r.shortId}</small>
+                </td>
+                <td>
+                  {statusIcon(r.status)} {r.status}
+                  {r.liveness === "uncertain" ? " · uncertain" : ""}
+                </td>
+                <td>
+                  <ProvChip p={r.identity} />
+                </td>
+                <td>
+                  {r.parent}
+                  {r.parentProv && (
+                    <>
+                      {" "}
+                      <ProvChip p={r.parentProv} />
+                    </>
+                  )}
+                </td>
+                <td>{clock(r.first)}</td>
+                <td>
+                  {clock(r.last)}
+                  {r.last !== null &&
+                  r.liveness !== "ended" &&
+                  r.liveness !== "history"
+                    ? ` (${ageLabel(p.nowMs - r.last)} ago)`
+                    : ""}
+                </td>
+                <td>{r.signals > 1 ? ageLabel(r.maxGap) : "—"}</td>
+                <td>{r.signals}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <ul className="facts">
+        <li>
+          <b>Checks (lint, tests, typecheck):</b>{" "}
+          {p.checks
+            ? `${p.checks} observed with exit code`
+            : "none observed, so nothing here is verified"}{" "}
+          <ProvChip p={p.checks ? "verified" : "unknown"} />
+        </li>
+        <li>
+          <b>Worktree and branch:</b> not available. Claude Code hook payloads
+          carry neither, so Atlas does not guess. <ProvChip p="unknown" />
+        </li>
+        <li>
+          <b>Delegation links:</b>{" "}
+          {(Object.entries(p.relationCounts) as [Provenance, number][])
+            .map(([k, n]) => `${n} ${provenanceLabel[k].toLowerCase()}`)
+            .join(" · ") || "none"}
+        </li>
+      </ul>
+    </section>
+  );
+}
+
+export function AgentBrief(p: {
+  name: string;
+  task: string | null;
+  status: string;
+  liveness: Liveness;
+  lastSignalMs: number | null;
+  nowMs: number;
+  staleAfter: number;
+  taskProv: Provenance;
+  statusProv: Provenance;
+  checks: number;
+}) {
+  const [copied, setCopied] = useState(false);
+  const ended = p.liveness === "ended";
+  const age = p.lastSignalMs === null ? null : p.nowMs - p.lastSignalMs;
+  const result = ended
+    ? `Stopped with “${p.status}”${p.lastSignalMs ? ` at ${clock(p.lastSignalMs)}` : ""}. ${p.checks ? `${p.checks} check(s) were observed in this run.` : "No check was observed, so the outcome is not verified."}`
+    : p.liveness === "history"
+      ? `Last known status “${p.status}”. This is an older step; go back to the present to see how it ended.`
+      : `Working${age !== null ? `, last signal ${ageLabel(age)} ago` : ""}.${p.liveness === "uncertain" ? " No recent signal, so we cannot say it is still running." : ""}`;
+  let look: string;
+  if (p.status === "failed" || p.status === "blocked")
+    look = `${p.name} reported “${p.status}”. In Claude Code, open its transcript and read why before retrying; do not disable a gate to get past it.`;
+  else if (p.liveness === "uncertain")
+    look = `In Claude Code, check whether ${p.name} is still running: no signal for ${age === null ? "a while" : ageLabel(age)}.`;
+  else if (ended)
+    look = p.checks
+      ? `In Claude Code, compare the observed check results with what ${p.name} reported.`
+      : `${p.name} stopped, but nothing was verified. In Claude Code, ask what was checked before relying on its result.`;
+  else if (p.liveness === "active")
+    look = `Nothing to do yet: ${p.name} is sending signals.`;
+  else look = `No evidence about the final outcome of ${p.name} at this step.`;
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(look);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {}
+  };
+  return (
+    <div className="brief">
+      <section>
+        <h4>ASSIGNMENT</h4>
+        <p>{p.task || "Not recorded"}</p>
+        <ProvChip p={p.task ? p.taskProv : "unknown"} />
+      </section>
+      <section>
+        <h4>OBSERVED RESULT</h4>
+        <p>{result}</p>
+        <ProvChip p={p.statusProv} />
+      </section>
+      <section>
+        <h4>WHAT TO LOOK AT NOW</h4>
+        <p>{look}</p>
+        <button className="copy" onClick={copy}>
+          {copied ? "Copied" : "Copy for Claude Code"}
+        </button>
+      </section>
+    </div>
+  );
+}
