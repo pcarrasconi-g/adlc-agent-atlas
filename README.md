@@ -11,8 +11,9 @@ It is not a chatbot, a remote control or a replacement for ADLC.
 Status: MVP in progress. Done: the event contract and trust semantics
 ([docs/ATLAS_EVENT_CONTRACT.md](docs/ATLAS_EVENT_CONTRACT.md)) and the map with
 live-follow, replay and the Learn / Diagnose readings. Still to come, in
-[the MVP plan](docs/ADLC_AGENT_ATLAS_MVP_PLAN.md): the hook adapter, the signals
-and the recorded demo story.
+[the MVP plan](docs/ADLC_AGENT_ATLAS_MVP_PLAN.md): the signals
+and the recorded demo story. The hook adapter is in
+([docs/ATLAS_EVENT_CONTRACT.md](docs/ATLAS_EVENT_CONTRACT.md), section 8).
 
 Internal package names, paths, scripts and environment variables still say
 `odradek`.
@@ -65,8 +66,17 @@ from a raw hook capture.
 
 The API reads `agent-kit/output/sessions/*.json` through a read-only volume. It
 does not read chat histories, provider folders, running processes or credentials.
-Until the hook adapter exists, `agent-kit/scripts/odradek-event.mjs` can write
-such files by hand (see [agent-kit/README.md](agent-kit/README.md)). What may be
+To observe a Claude Code run, start it with the optional Atlas hooks (they add to
+ADLC's hooks, they do not replace them):
+
+```bash
+node agent-kit/scripts/atlas-hook-config.mjs --write /tmp/atlas-settings.json
+claude --settings /tmp/atlas-settings.json
+```
+
+The adapter writes `agent-kit/output/sessions/<session>.json` as the run goes, and
+the open session updates by itself. `agent-kit/scripts/odradek-event.mjs` can still
+write such files by hand (see [agent-kit/README.md](agent-kit/README.md)). What may be
 stored is defined in [the event contract](docs/ATLAS_EVENT_CONTRACT.md): IDs,
 timing, agent type, short task label, status, check name and exit code; never
 prompts, responses, file contents, command output or secrets.

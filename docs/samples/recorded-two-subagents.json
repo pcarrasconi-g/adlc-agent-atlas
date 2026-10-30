@@ -2,12 +2,13 @@
   "sessionId": "atlas-sample-two-subagents",
   "goal": "Recorded sample: two parallel subagents (real Claude Code 2.1.311 hooks)",
   "kind": "done",
+  "source": "atlas-adapter",
   "principal": {
     "agentId": "session-1",
     "displayName": "Claude Code (principal)",
     "profile": "principal",
     "provider": "claude-code",
-    "task": "Launch two subagents in parallel",
+    "task": "Claude Code session",
     "identitySource": "host-issued"
   },
   "recordedAt": "2026-10-30T14:21:56.273Z",
@@ -28,13 +29,14 @@
       "at": "2026-10-30T14:21:59.514Z",
       "parsed": {
         "event": "agent_registered",
-        "status": "working",
-        "summary": "Started",
         "profile": "general-purpose",
         "displayName": "general-purpose",
         "provider": "claude-code",
+        "evidenceLevel": "host-recorded",
+        "status": "working",
+        "summary": "Started",
         "task": "Read a.txt and b.txt",
-        "evidenceLevel": "host-recorded"
+        "cwd": "…/probe2#936236"
       },
       "relations": [
         {
@@ -65,13 +67,14 @@
       "at": "2026-10-30T14:22:00.147Z",
       "parsed": {
         "event": "agent_registered",
-        "status": "working",
-        "summary": "Started",
         "profile": "general-purpose",
         "displayName": "general-purpose",
         "provider": "claude-code",
+        "evidenceLevel": "host-recorded",
+        "status": "working",
+        "summary": "Started",
         "task": "Read c.txt",
-        "evidenceLevel": "host-recorded"
+        "cwd": "…/probe2#936236"
       },
       "relations": [
         {
@@ -125,7 +128,8 @@
       "at": "2026-10-30T14:22:03.102Z",
       "parsed": {
         "status": "done",
-        "summary": "Stopped (result text not stored)"
+        "summary": "Stopped (result text not stored)",
+        "cwd": "…/probe2#936236"
       }
     },
     {
@@ -134,7 +138,8 @@
       "at": "2026-10-30T14:22:03.103Z",
       "parsed": {
         "status": "done",
-        "summary": "Stopped (result text not stored)"
+        "summary": "Stopped (result text not stored)",
+        "cwd": "…/probe2#936236"
       }
     },
     {
@@ -143,7 +148,7 @@
       "at": "2026-10-30T14:22:03.155Z",
       "parsed": {
         "status": "working",
-        "summary": "Launch of agent 2 confirmed: completed",
+        "summary": "Launch of general-purpose confirmed: completed",
         "tool": "Agent"
       },
       "relations": [
@@ -154,8 +159,7 @@
           "provenance": "observed",
           "confidence": 1,
           "metadata": {
-            "rule": "agent-tool-response",
-            "confirmsTask": true
+            "rule": "agent-tool-response"
           }
         }
       ]
@@ -166,7 +170,7 @@
       "at": "2026-10-30T14:22:03.166Z",
       "parsed": {
         "status": "working",
-        "summary": "Launch of agent 1 confirmed: completed",
+        "summary": "Launch of general-purpose confirmed: completed",
         "tool": "Agent"
       },
       "relations": [
@@ -177,8 +181,7 @@
           "provenance": "observed",
           "confidence": 1,
           "metadata": {
-            "rule": "agent-tool-response",
-            "confirmsTask": true
+            "rule": "agent-tool-response"
           }
         }
       ]

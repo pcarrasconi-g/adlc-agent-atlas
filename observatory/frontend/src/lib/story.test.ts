@@ -1,6 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildStory, linkKey, type StoryEvent, type StoryLink, type StoryNode } from "./story.ts";
+import {
+  buildStory,
+  linkKey,
+  type StoryEvent,
+  type StoryLink,
+  type StoryNode,
+} from "./story.ts";
 
 const nodes: StoryNode[] = [
   { id: "p", name: "Claude Code", isPrincipal: true },
@@ -9,7 +15,12 @@ const nodes: StoryNode[] = [
 ];
 // Mirrors the committed recording: two parallel subagents, edges first inferred then observed.
 const events: StoryEvent[] = [
-  { sequence: 0, agentId: "p", status: "registered", type: "session.principal" },
+  {
+    sequence: 0,
+    agentId: "p",
+    status: "registered",
+    type: "session.principal",
+  },
   { sequence: 1, agentId: "p", status: "working" },
   { sequence: 2, agentId: "a1", status: "working" },
   { sequence: 3, agentId: "p", status: "working" },
@@ -21,17 +32,47 @@ const events: StoryEvent[] = [
   { sequence: 9, agentId: "p", status: "done" },
 ];
 const links: StoryLink[] = [
-  { source: "p", target: "a1", relation: "delegation", provenance: "inferred", sequenceStart: 2 },
-  { source: "p", target: "a2", relation: "delegation", provenance: "inferred", sequenceStart: 4 },
-  { source: "p", target: "a2", relation: "delegation", provenance: "observed", sequenceStart: 8 },
-  { source: "p", target: "a1", relation: "delegation", provenance: "observed", sequenceStart: 9 },
+  {
+    source: "p",
+    target: "a1",
+    relation: "delegation",
+    provenance: "inferred",
+    sequenceStart: 2,
+  },
+  {
+    source: "p",
+    target: "a2",
+    relation: "delegation",
+    provenance: "inferred",
+    sequenceStart: 4,
+  },
+  {
+    source: "p",
+    target: "a2",
+    relation: "delegation",
+    provenance: "observed",
+    sequenceStart: 8,
+  },
+  {
+    source: "p",
+    target: "a1",
+    relation: "delegation",
+    provenance: "observed",
+    sequenceStart: 9,
+  },
 ];
 
 test("tells a short, ordered story from real evidence", () => {
   const steps = buildStory(events, nodes, links);
-  assert.deepEqual(steps.map((s) => s.id), ["delegate", "parallel", "result", "confirm:p->a1", "verification"]);
+  assert.deepEqual(
+    steps.map((s) => s.id),
+    ["delegate", "parallel", "result", "confirm:p->a1", "verification"],
+  );
   assert.ok(steps.length >= 4 && steps.length <= 6);
-  assert.deepEqual(steps.map((s) => s.sequence), [...steps.map((s) => s.sequence)].sort((a, b) => a - b));
+  assert.deepEqual(
+    steps.map((s) => s.sequence),
+    [...steps.map((s) => s.sequence)].sort((a, b) => a - b),
+  );
 });
 
 test("the first delegation step is as sure as its link, and names who delegated", () => {
@@ -42,13 +83,17 @@ test("the first delegation step is as sure as its link, and names who delegated"
 });
 
 test("parallel step appears at the first moment two agents are active", () => {
-  const parallel = buildStory(events, nodes, links).find((s) => s.id === "parallel")!;
+  const parallel = buildStory(events, nodes, links).find(
+    (s) => s.id === "parallel",
+  )!;
   assert.equal(parallel.sequence, 4);
   assert.deepEqual([...parallel.agents].sort(), ["a1", "a2"]);
 });
 
 test("a completed agent is not proof that anything passed", () => {
-  const result = buildStory(events, nodes, links).find((s) => s.id === "result")!;
+  const result = buildStory(events, nodes, links).find(
+    (s) => s.id === "result",
+  )!;
   assert.equal(result.agents[0], "a2");
   assert.match(result.body, /not that its work passed any check/);
 });
@@ -61,15 +106,31 @@ test("without any recorded check the story ends with 'unknown', never success", 
 });
 
 test("recorded checks turn the last step into verified evidence", () => {
-  const withGate: StoryEvent[] = [...events, { sequence: 10, agentId: "p", status: "failed", type: "gate.finished" }];
+  const withGate: StoryEvent[] = [
+    ...events,
+    {
+      sequence: 10,
+      agentId: "p",
+      status: "working",
+      type: "gate.finished",
+      exit: 1,
+    },
+    { sequence: 11, agentId: "p", status: "working", type: "gate.started" },
+  ];
   const last = buildStory(withGate, nodes, links).at(-1)!;
   assert.equal(last.provenance, "verified");
-  assert.match(last.title, /1 check observed/);
+  assert.match(last.title, /1 check observed/, "only finished checks count");
+  assert.match(last.body, /0 passed, 1 failed/);
+  assert.match(last.body, /not why, and not whether it was already failing/);
 });
 
 test("steps that lack evidence are omitted: a sequential run has no 'parallel' step", () => {
   const sequential = events.filter((e) => e.agentId !== "a2");
-  const steps = buildStory(sequential, nodes.slice(0, 2), links.filter((l) => l.target === "a1"));
+  const steps = buildStory(
+    sequential,
+    nodes.slice(0, 2),
+    links.filter((l) => l.target === "a1"),
+  );
   assert.ok(!steps.some((s) => s.id === "parallel"));
 });
 

@@ -6,6 +6,8 @@
 //
 // usage: node atlas-sample-from-hooks.mjs <raw.jsonl> <hooks-out.jsonl> <session-out.json>
 import { readFileSync, writeFileSync } from "node:fs";
+import { normalizeHook } from "./lib/atlas-normalize.mjs";
+import { buildSession } from "./lib/atlas-session.mjs";
 
 const [rawPath, hooksOut, sessionOut] = process.argv.slice(2);
 if (!rawPath || !hooksOut || !sessionOut) {
@@ -13,7 +15,7 @@ if (!rawPath || !hooksOut || !sessionOut) {
   process.exit(2);
 }
 
-const records = readFileSync(rawPath, "utf8").replace(/\n\}\n/g, "}\n").split("\n").filter(Boolean).map((l) => JSON.parse(l));
+const records_ = readFileSync(rawPath, "utf8").replace(/\n\}\n/g, "}\n").split("\n").filter(Boolean).map((l) => JSON.parse(l));
 
 // Stable, readable aliases instead of the real IDs.
 const aliases = new Map();
@@ -42,57 +44,22 @@ const sanitize = ({ _t, p }) => {
   }
   return { _t, p: out };
 };
-const clean = records.map(sanitize);
+const clean = records_.map(sanitize);
 const text = clean.map((r) => JSON.stringify(r)).join("\n") + "\n";
 if (/\/home\/|\/tmp\/|osbulb|sovos/i.test(text)) throw new Error("sanitization leak");
 writeFileSync(hooksOut, text);
 
-// Session file in the agent-kit explicit format.
-const principal = clean.find((r) => r.p.hook_event_name === "SessionStart").p.session_id;
-const transcript = [];
-const pendingLaunches = []; // descriptions of Agent calls not yet matched to a SubagentStart
-const agentTask = new Map();
-const add = (entry) => transcript.push({ round: transcript.length, ...entry });
-const short = (id) => id.replace(/^agent-/, "agent ");
-
-for (const { _t: at, p } of clean) {
-  const ev = p.hook_event_name;
-  if (ev === "PreToolUse" && p.tool_name === "Agent" && !p.agent_id) {
-    pendingLaunches.push(p.tool_input.description);
-    add({ agentId: principal, at, parsed: { status: "working", summary: `Delegating: ${p.tool_input.description}`, tool: "Agent" } });
-  } else if (ev === "SubagentStart") {
-    // Claude Code gives no parent or task here. The launch call that just
-    // happened is the only candidate, so the edge starts as an inference.
-    const task = pendingLaunches.shift();
-    agentTask.set(p.agent_id, task);
-    add({
-      agentId: p.agent_id, at,
-      parsed: { event: "agent_registered", status: "working", summary: "Started", profile: p.agent_type, displayName: p.agent_type, provider: "claude-code", task, evidenceLevel: "host-recorded" },
-      relations: [{ source: principal, target: p.agent_id, kind: "delegation", provenance: "inferred", confidence: 0.6, metadata: { rule: "adjacent-to-agent-launch" } }],
-    });
-  } else if (ev === "PostToolUse" && p.agent_id) {
-    add({ agentId: p.agent_id, at, parsed: { status: "working", summary: `Tool ${p.tool_name} finished`, tool: p.tool_name, durationMs: p.duration_ms } });
-  } else if (ev === "SubagentStop") {
-    add({ agentId: p.agent_id, at, parsed: { status: "done", summary: "Stopped (result text not stored)" } });
-  } else if (ev === "PostToolUse" && p.tool_name === "Agent" && !p.agent_id) {
-    const child = p.tool_response.agentId;
-    add({
-      agentId: principal, at,
-      parsed: { status: "working", summary: `Launch of ${short(child)} confirmed: ${p.tool_response.status}`, tool: "Agent" },
-      relations: [{ source: principal, target: child, kind: "delegation", provenance: "observed", confidence: 1, metadata: { rule: "agent-tool-response", confirmsTask: agentTask.get(child) === p.tool_input.description } }],
-    });
-  } else if (ev === "Stop" && !p.agent_id) {
-    add({ agentId: principal, at, parsed: { status: "done", summary: "Principal finished its turn" } });
-  }
+// The session file comes from the same normalizer and builder the live adapter
+// uses, so the committed sample shows exactly what the adapter produces. Real
+// IDs are replaced with readable aliases afterwards.
+const records = records_.map(({ _t, p }) => normalizeHook(p, { receivedAt: _t, env: {} })).filter(Boolean);
+let session = JSON.stringify(buildSession(records, { title: "Recorded sample: two parallel subagents (real Claude Code 2.1.311 hooks)" }), null, 2);
+const real = new Set();
+for (const { p } of records_) {
+  for (const v of [p.session_id, p.agent_id, p.tool_use_id, p.tool_response?.agentId]) if (typeof v === "string") real.add(v);
 }
-
-const first = clean[0]._t;
-writeFileSync(sessionOut, JSON.stringify({
-  sessionId: "atlas-sample-two-subagents",
-  goal: "Recorded sample: two parallel subagents (real Claude Code 2.1.311 hooks)",
-  kind: "done",
-  principal: { agentId: principal, displayName: "Claude Code (principal)", profile: "principal", provider: "claude-code", task: "Launch two subagents in parallel", identitySource: "host-issued" },
-  recordedAt: first,
-  transcript,
-}, null, 2) + "\n");
-console.log(`${clean.length} hook records, ${transcript.length} transcript entries, ${aliases.size} aliased ids`);
+for (const id of real) session = session.replaceAll(id, alias(id.startsWith("toolu") ? "toolu" : id === records_[0].p.session_id ? "session" : "agent", id));
+session = session.replace(/"sessionId": "[^"]+"/, '"sessionId": "atlas-sample-two-subagents"');
+if (/\/home\/|\/tmp\/|osbulb|sovos/i.test(session)) throw new Error("sanitization leak in session");
+writeFileSync(sessionOut, `${session}\n`);
+console.log(`${clean.length} hook records, ${records.length} normalized, ${aliases.size} aliased ids`);

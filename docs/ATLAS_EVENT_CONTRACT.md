@@ -22,13 +22,20 @@ names below are facts about that version, not a promise about others.
 | `SubagentStart` | `agent_id`, `agent_type` | **No parent, task, model or worktree.** |
 | `SubagentStop` | `agent_id`, `agent_type`, `last_assistant_message`, `agent_transcript_path`, `background_tasks`, `stop_hook_active` | `background_tasks` still lists the stopping agent as `running`; never use it as liveness. |
 | `PreToolUse` / `PostToolUse` | `tool_name`, `tool_use_id`, `tool_input`, `tool_response` (post), `duration_ms` (post); **`agent_id` + `agent_type` only when a subagent ran the tool** | Free per-agent activity signal. |
+| `PostToolUseFailure` | `tool_name`, `tool_use_id`, `tool_input`, `error`, `is_interrupt`, `duration_ms`; `agent_id` + `agent_type` for subagents | A failed `Bash` call. `error` starts with `Exit code N` and then carries the command output (never stored). A succeeded call arrives as `PostToolUse` and has no exit field: success means exit 0. |
 | `PostToolUse` for `Agent` | `tool_response.agentId`, `.agentType` (sync), `.status` (`async_launched` or `completed`), `.resolvedModel`; `tool_input.description`, `.subagent_type` | The only place the new agent's ID is tied to who launched it. In a **synchronous** launch it arrives only after the subagent stopped. |
 | `TaskCreated` / `TaskCompleted` | `task_id`, `task_subject`, `task_description` | No `agent_id` seen in a non-team session. |
 | `Stop` | `last_assistant_message`, `background_tasks`, `stop_hook_active` | |
 | `UserPromptSubmit` | `prompt`, `prompt_id` | Async agent completion arrives as a `<task-notification>` prompt. Not a source for Atlas. |
 
-**No payload carries a timestamp, a parent agent ID, a branch or a worktree.**
-The adapter must stamp receipt time and assign its own sequence number.
+**No payload carries a timestamp, a parent agent ID or a branch.** The adapter
+stamps receipt time and keeps its own order. **Worktree:** there is no field,
+but for a subagent launched with `isolation: worktree` every hook it triggers
+(`SubagentStart`, tool hooks, `SubagentStop`) reports `cwd` =
+`<repo>/.claude/worktrees/<name>`, while the principal's hooks report the
+repository root. Atlas reads the worktree name from that path. Hooks defined with
+`--settings` add to the ones a project or plugin defines (checked with a second
+project hook); they do not replace ADLC's guards.
 
 Both launch styles were seen: the first run launched subagents asynchronously
 (`async_launched`), the second synchronously (`completed`, see section 2). A
@@ -136,5 +143,44 @@ an agent is running. Adapter downtime and dropped events are recorded as gaps.
 
 1. Verify `TeammateIdle`, Agent Teams and task↔agent correlation with a real ADLC team run.
 2. Verify ADLC `agent_type` values on the target setup.
-3. Gate observation (recipe, exit code, cwd) needs a wrapper or a bounded hook (Increment 2); nothing in these payloads reports it.
-4. Decide how a worktree is learned, since no hook payload carries it.
+3. ADLC's own guard (`verify-guard.sh`) runs as a hook command, so its result is
+   not visible to other hooks. Atlas observes the checks agents run through the
+   Bash tool, and records the guard's context (`projectDir`, from
+   `CLAUDE_PROJECT_DIR`) beside each agent's `cwd`/worktree so Increment 3 can
+   show a mismatch. Observing the guard's own exit code would need a wrapper
+   around it, which would change ADLC; it is not planned.
+4. Branch is never reported; do not display or infer it.
+
+## 8. The adapter (Increment 2)
+
+`agent-kit/scripts/atlas-hook.mjs` is a hook command that records the events
+above. It is optional and per session:
+
+```bash
+node agent-kit/scripts/atlas-hook-config.mjs --write /tmp/atlas-settings.json
+claude --settings /tmp/atlas-settings.json      # leave the flag out to turn it off
+```
+
+- **What it stores** (`agent-kit/output/atlas/<session>.jsonl`, 0600, append-only):
+  a version, receipt time, session, hook name, a stable key, IDs, `agent_type`, a
+  kind (`session_start`, `agent_launch`, `subagent_start`, `gate_finished`, ...),
+  a task label (redacted, 120 characters), tool name and duration, and for
+  checks the recipe label (`just lint`, `npm test`, ...), exit code, a failure
+  fingerprint and path references (last segment plus a short hash; the
+  worktree name). Never prompts, answers, tool input or output, command lines,
+  file contents, transcript paths or environment variables.
+- **Session file:** after each record the log is turned into
+  `agent-kit/output/sessions/<session>.json`, which the observatory already
+  imports. The build is deterministic and deduplicates by key, so a repeated hook
+  changes nothing and a late hook only fills in what it carries.
+- **Checks:** a `Bash` call whose command matches a verification recipe becomes
+  `gate.started` / `gate.finished`. A failed check is a fact about the check;
+  it never marks the agent failed.
+- **Failure behavior:** the hook always exits 0, prints nothing (stdout of
+  `SessionStart` would reach the model), has a 4 s watchdog and a lock with a
+  stale-lock timeout. If it cannot lock it still appends the record. Median cost
+  measured at about 50 ms per hook, also with 1,500 records in the log.
+- **Retention:** adapter logs and sessions older than 7 days (`ATLAS_RETENTION_DAYS`)
+  are removed at `SessionStart`; `atlas-hook.mjs purge <session|--all>` removes
+  them on demand and never touches sessions written by hand.
+- **Environment:** `ATLAS_OUT_DIR`, `ATLAS_DISABLED=1`, `ATLAS_DEBUG=1`.

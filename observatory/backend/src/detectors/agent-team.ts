@@ -60,6 +60,14 @@ function collectRelations(entry: RawEntry, sequence: number): RelationV1[] {
   return [...deduped.values()];
 }
 
+// Check (gate) and task events keep their own type so the UI can tell what was
+// verified; every other entry stays a plain agent turn.
+const eventType = (event: unknown) => {
+  const value = text(event);
+  if (value === "agent_registered") return "agent.registered";
+  return value && /^(gate\.(started|finished)|task\.(created|completed))$/.test(value) ? value : "agent.turn";
+};
+
 /** Adapter for agent-team's documented explicit local session outputs. */
 export async function agentTeamEvents(file: string): Promise<AgentTeamSession> {
   if (path.extname(file) !== ".json") throw new Error("Only JSON transcript files are accepted by the local detector");
@@ -81,7 +89,7 @@ export async function agentTeamEvents(file: string): Promise<AgentTeamSession> {
   events.push(...transcript.map((entry: RawEntry,index:number)=>{
     const relations = collectRelations(entry,index+offset);
     const id=String(entry.agentId||"unknown"); const agent=metadata.get(id)||{key:id,name:id,evidenceLevel:"unverifiable" as const};
-    return cleanEvent({externalKey:`${key}:${index}`,sequence:index+offset,type:text(entry.parsed?.event)==="agent_registered"?"agent.registered":"agent.turn",agent,status:entry.parsed?.status || "unknown",occurredAt:(entry as any).at,summary:entry.parsed?.summary,content:(entry as any).rawText,payload:{round:(entry as any).round,parsed:entry.parsed},relations});
+    return cleanEvent({externalKey:`${key}:${index}`,sequence:index+offset,type:eventType(entry.parsed?.event),agent,status:entry.parsed?.status || "unknown",occurredAt:(entry as any).at,summary:entry.parsed?.summary,content:(entry as any).rawText,payload:{round:(entry as any).round,parsed:entry.parsed},relations});
   }));
   return {key,canonicalKey:Boolean(sessionId),title:String(data.goal || "agent-team session"),status:String(data.kind || "unknown"),events,relations:events.flatMap((event: EventV1) => event.relations || [])};
 }

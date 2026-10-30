@@ -80,3 +80,4 @@ button.present:focus-visible, .copy:focus-visible { outline: 3px solid #5368ed; 
 .brief .copy { font-size: 12px; border: 1px solid #d5dae6; border-radius: 8px; background: #fff; padding: 4px 8px; }
 details.evidence-block { margin-top: 8px; }
 details.evidence-block > summary { cursor: pointer; font-weight: 700; }
+.lens-panel.diagnose { max-height: 46vh; }

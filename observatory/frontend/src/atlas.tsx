@@ -210,14 +210,26 @@ export type DiagnoseRow = {
   last: number | null;
   maxGap: number;
   signals: number;
+  worktree: string | null;
+};
+
+export type CheckRow = {
+  id: string;
+  at: number | null;
+  agent: string;
+  recipe: string;
+  exit: number | null;
+  interrupted: boolean;
+  where: string | null;
 };
 
 export function DiagnosePanel(p: {
   rows: DiagnoseRow[];
-  checks: number;
+  checkRows: CheckRow[];
   nowMs: number;
   relationCounts: Partial<Record<Provenance, number>>;
 }) {
+  const checks = p.checkRows.length;
   return (
     <section className="lens-panel diagnose" aria-label="Diagnosis">
       <div className="story-head">
@@ -231,6 +243,7 @@ export function DiagnosePanel(p: {
               <th>Status</th>
               <th>Identity</th>
               <th>Launched by</th>
+              <th>Worktree</th>
               <th>First signal</th>
               <th>Last signal</th>
               <th>Longest silence</th>
@@ -260,6 +273,9 @@ export function DiagnosePanel(p: {
                     </>
                   )}
                 </td>
+                <td>
+                  {r.worktree ?? <span className="muted">not reported</span>}
+                </td>
                 <td>{clock(r.first)}</td>
                 <td>
                   {clock(r.last)}
@@ -276,17 +292,57 @@ export function DiagnosePanel(p: {
           </tbody>
         </table>
       </div>
+      {checks > 0 && (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Agent</th>
+                <th>Check</th>
+                <th>Result</th>
+                <th>Ran in</th>
+              </tr>
+            </thead>
+            <tbody>
+              {p.checkRows.map((c) => (
+                <tr key={c.id}>
+                  <td>{clock(c.at)}</td>
+                  <td>{c.agent}</td>
+                  <td>
+                    <code>{c.recipe}</code>
+                  </td>
+                  <td>
+                    {c.interrupted
+                      ? "■ interrupted"
+                      : c.exit === 0
+                        ? "✓ passed (exit 0)"
+                        : c.exit === null
+                          ? "? result unknown"
+                          : `✕ failed (exit ${c.exit})`}{" "}
+                    <ProvChip p={c.exit === null ? "unknown" : "verified"} />
+                  </td>
+                  <td>
+                    {c.where ?? <span className="muted">not reported</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
       <ul className="facts">
         <li>
           <b>Checks (lint, tests, typecheck):</b>{" "}
-          {p.checks
-            ? `${p.checks} observed with exit code`
+          {checks
+            ? `${checks} observed with an exit code`
             : "none observed, so nothing here is verified"}{" "}
-          <ProvChip p={p.checks ? "verified" : "unknown"} />
+          <ProvChip p={checks ? "verified" : "unknown"} />
         </li>
         <li>
-          <b>Worktree and branch:</b> not available. Claude Code hook payloads
-          carry neither, so Atlas does not guess. <ProvChip p="unknown" />
+          <b>Worktree:</b> shown when Claude Code reports one for the agent
+          (subagents launched with worktree isolation). The branch is never
+          reported, so Atlas does not guess it. <ProvChip p="unknown" />
         </li>
         <li>
           <b>Delegation links:</b>{" "}

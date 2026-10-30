@@ -1,10 +1,21 @@
 // "Learn" mode: a short guided story computed deterministically from the same
 // events and links the map draws. No LLM, no invented steps: a step exists only
 // if the recording has the evidence for it, and each step says how sure we are.
-import { fromRelation, provenanceLabel, isStronger, type Provenance } from "./provenance.ts";
+import {
+  fromRelation,
+  provenanceLabel,
+  isStronger,
+  type Provenance,
+} from "./provenance.ts";
 import { TERMINAL } from "./liveness.ts";
 
-export type StoryEvent = { sequence: number; status?: string | null; agentId?: string | null; type?: string | null };
+export type StoryEvent = {
+  sequence: number;
+  status?: string | null;
+  agentId?: string | null;
+  type?: string | null;
+  exit?: number | null;
+};
 export type StoryNode = { id: string; name: string; isPrincipal?: boolean };
 export type StoryLink = {
   source: string;
@@ -24,15 +35,22 @@ export type StoryStep = {
   provenance: Provenance;
 };
 
-export const linkKey = (source: string, target: string) => `${source}->${target}`;
+export const linkKey = (source: string, target: string) =>
+  `${source}->${target}`;
 const startOf = (l: StoryLink) => l.sequenceStart ?? l.sequence ?? 0;
 const status = (e: StoryEvent) => String(e.status || "").toLowerCase();
-const isCheck = (e: StoryEvent) => /^(gate|check|verification)[._]/i.test(String(e.type || ""));
+const isCheck = (e: StoryEvent) =>
+  /^(gate|check|verification)\.finished$/i.test(String(e.type || ""));
 
-export function buildStory(events: StoryEvent[], nodes: StoryNode[], links: StoryLink[]): StoryStep[] {
+export function buildStory(
+  events: StoryEvent[],
+  nodes: StoryNode[],
+  links: StoryLink[],
+): StoryStep[] {
   if (!events.length) return [];
   const ordered = [...events].sort((a, b) => a.sequence - b.sequence);
-  const name = (id: string) => nodes.find((n) => n.id === id)?.name || "an agent";
+  const name = (id: string) =>
+    nodes.find((n) => n.id === id)?.name || "an agent";
   const principal = nodes.find((n) => n.isPrincipal)?.id;
   const delegations = links
     .filter((l) => l.relation === "delegation" || l.relation === "handoff")
@@ -43,7 +61,9 @@ export function buildStory(events: StoryEvent[], nodes: StoryNode[], links: Stor
   if (delegations.length) {
     const first = delegations[0];
     const at = startOf(first);
-    const visible = delegations.filter((l) => l.source === first.source && startOf(l) <= at);
+    const visible = delegations.filter(
+      (l) => l.source === first.source && startOf(l) <= at,
+    );
     const prov = fromRelation(first.provenance);
     steps.push({
       id: "delegate",
@@ -58,12 +78,17 @@ export function buildStory(events: StoryEvent[], nodes: StoryNode[], links: Stor
 
   // 2. Concurrency: the moment the most agents were working at once (needs >= 2).
   const active = new Set<string>();
-  let peak: { count: number; sequence: number; agents: string[] } = { count: 0, sequence: 0, agents: [] };
+  let peak: { count: number; sequence: number; agents: string[] } = {
+    count: 0,
+    sequence: 0,
+    agents: [],
+  };
   for (const e of ordered) {
     if (!e.agentId || e.agentId === principal) continue;
     if (TERMINAL.has(status(e))) active.delete(e.agentId);
     else active.add(e.agentId);
-    if (active.size > peak.count) peak = { count: active.size, sequence: e.sequence, agents: [...active] };
+    if (active.size > peak.count)
+      peak = { count: active.size, sequence: e.sequence, agents: [...active] };
   }
   if (peak.count >= 2) {
     steps.push({
@@ -78,7 +103,9 @@ export function buildStory(events: StoryEvent[], nodes: StoryNode[], links: Stor
   }
 
   // 3. The first result an agent reported.
-  const firstResult = ordered.find((e) => e.agentId && e.agentId !== principal && TERMINAL.has(status(e)));
+  const firstResult = ordered.find(
+    (e) => e.agentId && e.agentId !== principal && TERMINAL.has(status(e)),
+  );
   if (firstResult?.agentId) {
     steps.push({
       id: "result",
@@ -94,7 +121,11 @@ export function buildStory(events: StoryEvent[], nodes: StoryNode[], links: Stor
   // 4. A relation first inferred from timing and later confirmed by a stronger signal.
   for (const weak of delegations) {
     const strong = delegations.find(
-      (l) => l.source === weak.source && l.target === weak.target && isStronger(fromRelation(l.provenance), fromRelation(weak.provenance)) && startOf(l) > startOf(weak),
+      (l) =>
+        l.source === weak.source &&
+        l.target === weak.target &&
+        isStronger(fromRelation(l.provenance), fromRelation(weak.provenance)) &&
+        startOf(l) > startOf(weak),
     );
     if (!strong) continue;
     steps.push({
@@ -111,13 +142,18 @@ export function buildStory(events: StoryEvent[], nodes: StoryNode[], links: Stor
 
   // 5. What was actually verified.
   const checks = ordered.filter(isCheck);
+  const failed = checks.filter(
+    (e) => typeof e.exit === "number" && e.exit !== 0,
+  ).length;
+  const passed = checks.filter((e) => e.exit === 0).length;
+  const unknown = checks.length - passed - failed;
   const lastSeq = ordered[ordered.length - 1].sequence;
   steps.push(
     checks.length
       ? {
           id: "verification",
           title: `${checks.length} check${checks.length > 1 ? "s" : ""} observed`,
-          body: "These are checks whose command and exit code were recorded. They are the only evidence here that something passed or failed.",
+          body: `${passed} passed, ${failed} failed${unknown ? `, ${unknown} with no exit code` : ""}. These are checks whose exit code was recorded: the only evidence here that something passed or failed. A failed check says what ran and how it ended, not why, and not whether it was already failing before this run.`,
           sequence: lastSeq,
           agents: [],
           links: [],

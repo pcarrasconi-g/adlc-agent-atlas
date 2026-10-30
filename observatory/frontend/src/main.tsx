@@ -310,7 +310,7 @@ const eventTime = (e: any) => {
   return Number.isFinite(t) ? t : null;
 };
 const isCheck = (e: any) =>
-  /^(gate|check|verification)[._]/i.test(String(e?.type || ""));
+  /^(gate|check|verification)\.finished$/i.test(String(e?.type || ""));
 
 function App() {
   const [projects, setProjects] = useState<any[]>([]),
@@ -385,6 +385,31 @@ function App() {
     setEvents(ev.value);
     dispatch({ type: reset ? "open" : "events", total: ev.value.length });
   };
+  // Coalesce bursts of events (a busy run sends many per second) into one
+  // refresh, but never wait longer than 1.5s.
+  const pending = useRef<{
+    timer?: ReturnType<typeof setTimeout>;
+    first?: number;
+    id?: string;
+  }>({});
+  const scheduleRefresh = (id?: string) => {
+    const p = pending.current,
+      t = Date.now();
+    if (id) p.id = id;
+    p.first = p.first ?? t;
+    if (p.timer) clearTimeout(p.timer);
+    p.timer = setTimeout(
+      () => {
+        const target = p.id;
+        p.timer = undefined;
+        p.first = undefined;
+        p.id = undefined;
+        load();
+        if (target && selectedIdRef.current === target) refresh(target, false);
+      },
+      Math.min(400, Math.max(0, 1500 - (t - p.first))),
+    );
+  };
   useEffect(() => {
     load();
     const e = new EventSource("/api/stream");
@@ -396,16 +421,17 @@ function App() {
       try {
         d = JSON.parse(m.data);
       } catch {}
-      load();
       const id = selectedIdRef.current;
-      // "ready" is sent on every (re)connect: resync, since events may have
-      // arrived while the stream was down.
-      if (
-        id &&
-        (d.type === "ready" ||
-          (d.type === "session.updated" && d.sessionId === id))
-      )
-        refresh(id, false);
+      // "ready" is sent on every (re)connect: resync at once, since events may
+      // have arrived while the stream was down.
+      if (d.type === "ready") {
+        load();
+        if (id) refresh(id, false);
+        return;
+      }
+      scheduleRefresh(
+        d.type === "session.updated" && d.sessionId === id ? id : undefined,
+      );
     };
     return () => e.close();
   }, []);
@@ -539,10 +565,39 @@ function App() {
       ) as Record<string, Liveness>,
     [agents, signals, now, staleAfter, atNewest, recorded],
   );
-  const checks = useMemo(
-    () => events.slice(0, cursor + 1).filter(isCheck).length,
-    [events, cursor],
+  const checkRows = useMemo(
+    () =>
+      events
+        .slice(0, cursor + 1)
+        .filter(isCheck)
+        .map((e: any) => {
+          const p = e?.payload?.parsed || {};
+          return {
+            id: String(e.id),
+            at: eventTime(e),
+            agent: name(
+              agents0.find((a: any) => String(a.id) === e.agentId) || {
+                id: e.agentId,
+                name: e.agentName,
+              },
+            ),
+            recipe: String(p.recipe || "check"),
+            exit: typeof p.exit === "number" ? (p.exit as number) : null,
+            interrupted: Boolean(p.interrupted),
+            where: (p.worktree as string) || null,
+          };
+        }),
+    [events, cursor, agents0],
   );
+  const checks = checkRows.length;
+  const agentWhere = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const e of events.slice(0, cursor + 1)) {
+      const w = e?.payload?.parsed?.worktree;
+      if (w && e.agentId) m.set(e.agentId, w);
+    }
+    return m;
+  }, [events, cursor]);
   const phases = useMemo(
     () =>
       [
@@ -581,6 +636,7 @@ function App() {
           status: e.status,
           agentId: e.agentId,
           type: e.type,
+          exit: e?.payload?.parsed?.exit,
         })),
         arr(base?.nodes).map((n: any) => ({
           id: String(n.id),
@@ -639,6 +695,7 @@ function App() {
       last: s?.last ?? null,
       maxGap: s?.maxGap ?? 0,
       signals: s?.count ?? 0,
+      worktree: agentWhere.get(id) ?? null,
     };
   });
   const relationCounts: Partial<Record<Provenance, number>> = {};
@@ -854,7 +911,7 @@ function App() {
           {lens === "diagnose" && (
             <DiagnosePanel
               rows={diagnoseRows}
-              checks={checks}
+              checkRows={checkRows}
               nowMs={now}
               relationCounts={relationCounts}
             />
